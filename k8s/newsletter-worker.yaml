@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: newsletter-worker
+  namespace: utsavops
+  labels:
+    app: newsletter-worker
+    tier: low
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: newsletter-worker
+  template:
+    metadata:
+      labels:
+        app: newsletter-worker
+        tier: low
+    spec:
+      containers:
+      - name: worker
+        image: utsavops/newsletter-worker:latest
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"

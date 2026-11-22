@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+}
+
+/* Custom festive gradients and card styles */
+.festive-gradient {
+  background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
+}
+
+.festive-gold {
+  color: #f59e0b;
+}

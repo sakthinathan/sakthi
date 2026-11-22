@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: utsavops
+  labels:
+    app.kubernetes.io/name: utsavops
+    app.kubernetes.io/part-of: festive-commerce

@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: utsavops-checkout
+  namespace: utsavops
+  labels:
+    app: utsavops-checkout
+    tier: critical
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: utsavops-checkout
+  template:
+    metadata:
+      labels:
+        app: utsavops-checkout
+        tier: critical
+    spec:
+      containers:
+      - name: checkout
+        image: utsavops/checkout:latest
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1024Mi"
+        readinessProbe:
+          httpGet:
+            path: /api/ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: utsavops-checkout
+  namespace: utsavops
+spec:
+  type: ClusterIP
+  selector:
+    app: utsavops-checkout
+  ports:
+  - port: 8000
+    targetPort: 8000

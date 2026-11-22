@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=sqlite+aiosqlite:///./utsavops.db
+      - SARVAM_API_KEY=${SARVAM_API_KEY:-}
+      - FLAGSMITH_ENVIRONMENT_KEY=${FLAGSMITH_ENVIRONMENT_KEY:-}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/utsavops.db:/app/utsavops.db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend

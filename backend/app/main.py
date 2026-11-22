@@ -2,6 +2,20 @@
 UtsavOps — FastAPI Application Entry Point
 The self-healing AI operating system for India's festive commerce.
 """
+# Compatibility patch for Starlette 1.10.x with FastAPI 0.111.x
+import starlette.routing
+starlette.routing.Router.on_startup = []
+starlette.routing.Router.on_shutdown = []
+_orig_router_init = starlette.routing.Router.__init__
+def _compat_router_init(self, *args, on_startup=None, on_shutdown=None, **kwargs):
+    self.on_startup = list(on_startup or [])
+    self.on_shutdown = list(on_shutdown or [])
+    _orig_router_init(self, *args, **kwargs)
+starlette.routing.Router.__init__ = _compat_router_init
+
+import fastapi
+fastapi.FastAPI.max_body_size = None
+
 import os
 import logging
 from contextlib import asynccontextmanager
