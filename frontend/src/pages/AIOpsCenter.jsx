@@ -177,6 +177,10 @@ export default function AIOpsCenter() {
                   <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">
                     SIMULATED SURGE ANOMALY
                   </span>
+                ) : svc.is_simulated ? (
+                  <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full border border-slate-300">
+                    SIMULATED TELEMETRY (utsavops-nudgebee)
+                  </span>
                 ) : (
                   <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
                     LIVE CLUSTER (utsavops-nudgebee)

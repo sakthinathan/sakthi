@@ -56,7 +56,10 @@ async def lifespan(app: FastAPI):
         await init_db()
         logger.info("Database schema initialized and verified")
     except Exception as e:
-        logger.warn("Database schema initialization encountered warning", error=str(e))
+        if settings.is_production:
+            logger.critical("Fatal: Database initialization failed in production mode", error=str(e))
+            raise
+        logger.warn("Database schema initialization encountered warning in development mode", error=str(e))
 
     # Ensure upload directory exists
     os.makedirs(settings.upload_dir, exist_ok=True)

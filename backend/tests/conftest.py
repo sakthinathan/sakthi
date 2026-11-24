@@ -35,3 +35,12 @@ async def client(test_session):
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+@pytest_asyncio.fixture
+async def auth_client(client, test_session):
+    from app.routers.auth import ensure_default_operator
+    from app.utils.security import create_access_token
+    operator = await ensure_default_operator(test_session)
+    token = create_access_token({"sub": operator.id, "email": operator.email, "role": operator.role})
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client

@@ -13,6 +13,8 @@ from app.models.audit import FeatureFlagSnapshot
 from app.schemas.common import FlagEvaluationRequest, SurgeModeRequest
 from app.services.flagsmith_service import flagsmith_service
 from app.services.audit_service import log_action
+from app.models.operator import Operator
+from app.routers.auth import require_roles
 
 router = APIRouter()
 
@@ -84,11 +86,12 @@ async def evaluate_for_customer(
 @router.post("/surge-mode")
 async def toggle_surge_mode(
     req: SurgeModeRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    operator: Operator = Depends(require_roles("admin", "sre_lead"))
 ):
     """
     Operator surge survival mode trigger.
-    Protects checkout during festive surges.
+    Protects checkout during festive surges. Requires admin or sre_lead role.
     """
     res = await flagsmith_service.update_surge_mode_remote(req.enabled)
 
@@ -96,7 +99,7 @@ async def toggle_surge_mode(
         db,
         entity_type="feature_flag",
         action="surge_mode_toggled",
-        actor="operator",
+        actor=f"operator:{operator.email}",
         details={"enabled": req.enabled, "management_api": res, "reason": req.reason or "Manual operational adjustment"}
     )
     await db.commit()

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     app_env: str = Field("development", description="Environment mode: development, test, or production")
     app_debug: bool = Field(True, description="Enable debug mode (automatically disabled in production)")
     app_secret_key: str = Field("dev-secret-key-change-in-production", description="Secret key for cryptographic operations")
+    auth_secret_key: Optional[str] = Field(None, validation_alias="AUTH_SECRET_KEY", description="Dedicated secret key for authentication token signing")
     app_host: str = Field("0.0.0.0", description="Bind host")
     app_port: int = Field(8000, description="Bind port")
     frontend_url: str = Field("http://localhost:5173", description="Frontend origin for CORS")
@@ -79,6 +80,11 @@ class Settings(BaseSettings):
     upload_dir: str = str(Path(__file__).parent.parent / "uploads")
 
     # --- Computed / Unified Properties ---
+
+    @property
+    def token_signing_secret(self) -> str:
+        """Returns dedicated authentication signing key or app_secret_key"""
+        return self.auth_secret_key or self.app_secret_key
 
     @property
     def google_maps_api_key(self) -> Optional[str]:
@@ -193,6 +199,8 @@ class Settings(BaseSettings):
         """
         missing = []
         if self.is_production:
+            if not self.auth_secret_key:
+                missing.append("AUTH_SECRET_KEY (dedicated token signing secret required in production)")
             if not self.db_host and not self.raw_database_url:
                 missing.append("Cloud SQL connection details (DB_HOST, DB_USER, DB_PASSWORD) or DATABASE_URL")
             if not self.google_maps_api_key:

@@ -9,6 +9,8 @@ from typing import Optional, List
 
 from app.database import get_db
 from app.models.customer import Customer
+from app.models.operator import Operator
+from app.routers.auth import require_roles
 from app.schemas.customer import (
     CustomerCreate, CustomerUpdate, CustomerResponse, CustomerListResponse
 )
@@ -80,8 +82,12 @@ async def create_customer(
     return CustomerResponse.model_validate(customer)
 
 @router.post("/{customer_id}/vip")
-async def toggle_vip(customer_id: str, db: AsyncSession = Depends(get_db)):
-    """Toggle VIP customer status"""
+async def toggle_vip(
+    customer_id: str,
+    db: AsyncSession = Depends(get_db),
+    operator: Operator = Depends(require_roles("admin", "sre_lead"))
+):
+    """Toggle VIP customer status (requires admin or sre_lead)"""
     stmt = select(Customer).where(Customer.id == customer_id)
     customer = (await db.execute(stmt)).scalar_one_or_none()
     if not customer:
@@ -95,7 +101,7 @@ async def toggle_vip(customer_id: str, db: AsyncSession = Depends(get_db)):
         entity_type="customer",
         action="vip_status_toggled",
         entity_id=customer.id,
-        actor="operator",
+        actor=f"operator:{operator.email}",
         details={"new_vip_status": customer.is_vip, "tier": customer.tier}
     )
     await db.commit()

@@ -1,7 +1,8 @@
 import pytest
 
 @pytest.mark.asyncio
-async def test_aiops_incident_workflow(client):
+async def test_aiops_incident_workflow(auth_client):
+    client = auth_client
     # 1. Check services
     services_res = await client.get("/api/aiops/services")
     assert services_res.status_code == 200

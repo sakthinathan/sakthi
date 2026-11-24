@@ -20,3 +20,16 @@ class Operator(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<Operator {self.email} ({self.role})>"
+
+
+class RevokedToken(Base, TimestampMixin):
+    """Server-side revoked tokens blacklist for secure logout."""
+    __tablename__ = "revoked_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    token_signature: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    def __repr__(self) -> str:
+        return f"<RevokedToken {self.token_signature[:10]}...>"

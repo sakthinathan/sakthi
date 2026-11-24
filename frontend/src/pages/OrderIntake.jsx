@@ -172,7 +172,10 @@ export default function OrderIntake() {
           className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-bold rounded-xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 text-sm"
         >
           {loading ? (
-            <LoadingSpinner message="Extracting with Sarvam AI..." />
+            <>
+              <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              <span>Analyzing with Sarvam AI...</span>
+            </>
           ) : (
             <>
               <Sparkles className="w-4 h-4" />
