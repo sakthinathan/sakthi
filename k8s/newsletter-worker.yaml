@@ -19,7 +19,14 @@ spec:
     spec:
       containers:
       - name: worker
-        image: utsavops/newsletter-worker:latest
+        image: python:3.11-slim
+        command: ["python3", "-c"]
+        args:
+        - |
+          import time
+          print("Newsletter worker started (tier: low)...")
+          while True:
+              time.sleep(10)
         resources:
           requests:
             cpu: "50m"

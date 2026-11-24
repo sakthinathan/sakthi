@@ -19,34 +19,50 @@ spec:
     spec:
       containers:
       - name: checkout
-        image: utsavops/checkout:latest
+        image: python:3.11-slim
+        command: ["python3", "-c"]
+        args:
+        - |
+          import http.server, socketserver
+          class Handler(http.server.SimpleHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.send_header('Content-type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(b'{"status":"healthy","service":"utsavops-checkout"}')
+              def log_message(self, format, *args):
+                  pass
+          with socketserver.TCPServer(("", 8000), Handler) as httpd:
+              httpd.serve_forever()
         ports:
         - containerPort: 8000
         resources:
           requests:
-            cpu: "250m"
-            memory: "256Mi"
+            cpu: "100m"
+            memory: "128Mi"
           limits:
-            cpu: "1000m"
-            memory: "1024Mi"
+            cpu: "500m"
+            memory: "512Mi"
         readinessProbe:
           httpGet:
             path: /api/ready
             port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 10
+          initialDelaySeconds: 2
+          periodSeconds: 5
         livenessProbe:
           httpGet:
             path: /api/health
             port: 8000
-          initialDelaySeconds: 15
-          periodSeconds: 20
+          initialDelaySeconds: 5
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: utsavops-checkout
   namespace: utsavops
+  labels:
+    app: utsavops-checkout
 spec:
   type: ClusterIP
   selector:
