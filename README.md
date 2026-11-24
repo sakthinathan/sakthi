@@ -2,7 +2,7 @@
 
 > **Festive Hacks 2026** | Multi-Agent End-to-End Autonomous Festive Operating System
 
-[![Tests](https://img.shields.io/badge/tests-27%20passed-emerald)](./backend/tests)
+[![Tests](https://img.shields.io/badge/tests-40%20passed-emerald)](./backend/tests)
 [![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19.0-61dafb)](https://react.dev)
@@ -129,7 +129,24 @@ make seed
 ```bash
 make test
 ```
-*Expected: 27/27 pytest tests passing in < 0.4s.*
+*Expected: 40/40 pytest tests passing in < 0.9s.*
+
+---
+
+## 4.5. Comprehensive Documentation Suite
+
+For judges, operators, and engineers, in-depth documentation is available in the [`docs/`](./docs) directory:
+
+- 📐 [Architecture Specification](./docs/ARCHITECTURE.md)
+- 📊 [Architecture Diagrams & Sequence Flows](./docs/ARCHITECTURE_DIAGRAM.md)
+- 🔌 [Integration Status & Sponsor Technology Matrix](./docs/INTEGRATION_STATUS.md)
+- 🚀 [Deployment & Production Run Guide](./docs/DEPLOYMENT_GUIDE.md)
+- 🎬 [Judge Demo Walkthrough & Script](./docs/DEMO_WALKTHROUGH.md)
+- 🛡️ [Security Review & Hardening Audit](./docs/SECURITY_REVIEW.md)
+- ⚠️ [Known Limitations & Engineering Disclosures](./docs/KNOWN_LIMITATIONS.md)
+- 📋 [Master Final Implementation Report](./docs/FINAL_IMPLEMENTATION_REPORT.md)
+
+---
 
 ### 4. Start the Application
 

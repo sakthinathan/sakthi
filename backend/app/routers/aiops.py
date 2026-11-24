@@ -20,6 +20,8 @@ from app.services.nudgebee import (
 )
 from app.services.flagsmith_service import flagsmith_service
 from app.services.audit_service import log_action
+from app.models.operator import Operator
+from app.routers.auth import require_roles, get_current_operator
 from datetime import datetime, timezone
 
 router = APIRouter()
@@ -136,16 +138,17 @@ async def approve_incident_action(
     incident_id: str,
     action_id: str,
     body: ActionApproval,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    operator: Operator = Depends(require_roles("admin", "sre_lead"))
 ):
-    """Human-in-the-loop approval before disruptive mitigation"""
+    """Human-in-the-loop approval before disruptive mitigation (requires admin/sre_lead)"""
     stmt = select(IncidentAction).where(IncidentAction.id == action_id, IncidentAction.incident_id == incident_id)
     action = (await db.execute(stmt)).scalar_one_or_none()
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
 
     action.status = "approved"
-    action.approved_by = body.approved_by
+    action.approved_by = body.approved_by or operator.name
     action.approved_at = datetime.now(timezone.utc)
 
     await log_action(
@@ -153,8 +156,8 @@ async def approve_incident_action(
         entity_type="incident_action",
         action="mitigation_approved",
         entity_id=action.id,
-        actor=body.approved_by,
-        details={"notes": body.notes, "action_type": action.action_type}
+        actor=f"operator:{operator.email}",
+        details={"notes": body.notes, "action_type": action.action_type, "approver": body.approved_by}
     )
     await db.commit()
     return {"message": "Mitigation approved", "action_id": action.id, "status": action.status}
@@ -163,9 +166,10 @@ async def approve_incident_action(
 async def execute_incident_action(
     incident_id: str,
     action_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    operator: Operator = Depends(require_roles("admin", "sre_lead"))
 ):
-    """Execute authorized, allowlisted mitigation"""
+    """Execute authorized, allowlisted mitigation (requires admin/sre_lead)"""
     try:
         act = await IncidentWorkflowService.execute_mitigation(db, incident_id, action_id)
         return {

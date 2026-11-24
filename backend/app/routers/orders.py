@@ -16,6 +16,8 @@ from app.database import get_db
 from app.config import get_settings
 from app.models.order import Order, OrderItem, OrderInput
 from app.models.customer import Customer
+from app.models.operator import Operator
+from app.routers.auth import get_current_operator
 from app.schemas.order import (
     OrderIntakeResponse, OrderResponse, OrderListResponse,
     OrderReviewUpdate, OrderItemResponse, OrderInputResponse
@@ -65,11 +67,16 @@ async def intake_handwritten_image(
         extraction_confidence=confidence,
         processing_status="completed" if extraction.get("success", True) else "failed"
     )
-    db.add(order_input)
-    await db.flush()
+    try:
+        db.add(order_input)
+        await db.flush()
 
-    order = await create_order_from_extraction(db, ext_data, order_input.id, idempotency_key)
-    await db.commit()
+        order = await create_order_from_extraction(db, ext_data, order_input.id, idempotency_key)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("Order intake image transaction failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Order processing failed: {str(e)}")
 
     provider_meta = {
         "provider": extraction.get("provider", "sarvam_document_ai"),
@@ -122,11 +129,16 @@ async def intake_voice_order(
         extraction_confidence=confidence,
         processing_status="completed" if transcription.get("success", True) else "failed"
     )
-    db.add(order_input)
-    await db.flush()
+    try:
+        db.add(order_input)
+        await db.flush()
 
-    order = await create_order_from_extraction(db, ext_data, order_input.id, idempotency_key)
-    await db.commit()
+        order = await create_order_from_extraction(db, ext_data, order_input.id, idempotency_key)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("Order intake image transaction failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Order processing failed: {str(e)}")
 
     provider_meta = {
         "provider": transcription.get("provider", "sarvam_saaras_stt"),
@@ -385,19 +397,27 @@ async def reject_order(
     await db.commit()
     return {"message": f"Order {order.order_number} rejected", "status": order.status}
 
+@router.get("/{order_id}/voice-confirmation")
 @router.post("/{order_id}/voice-confirmation")
 async def voice_confirmation(
     order_id: str,
     language: str = Query("hi-IN"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Generate audio confirmation using Sarvam Bulbul v3"""
+    """Generate audio confirmation using Sarvam Bulbul v3 in Tamil, Hindi, or English"""
     order = await get_order_with_relations(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    customer_name = order.customer.name if order.customer else "ग्राहक"
-    text_message = f"नमस्ते {customer_name}! आपका उत्सवऑप्स ऑर्डर {order.order_number} स्वीकार कर लिया गया है। कुल राशि {int(order.total)} रुपये है।"
+    customer_name = order.customer.name if order.customer else "Valued Customer"
 
-    audio_bytes = await sarvam_service.generate_voice_confirmation(text_message, language)
+    # Multilingual confirmation messages tailored for festive shoppers
+    if language == "ta-IN":
+        text_message = f"வணக்கம் {customer_name}! உங்கள் உத்சவ்ஆப்ஸ் தீபாவளி ஆர்டர் {order.order_number} வெற்றிகரமாக ஏற்கப்பட்டது. மொத்த தொகை {int(order.total)} ரூபாய். நன்றி!"
+    elif language == "en-IN":
+        text_message = f"Hello {customer_name}! Your UtsavOps festive order {order.order_number} has been successfully confirmed. Total amount is {int(order.total)} rupees. Happy Festivities!"
+    else:
+        text_message = f"नमस्ते {customer_name}! आपका उत्सवऑप्स दिवाली ऑर्डर {order.order_number} सफलतापूर्वक स्वीकार कर लिया गया है। कुल राशि {int(order.total)} रुपये है।"
+
+    audio_bytes = await sarvam_service.generate_voice_confirmation(text_message, language_code=language)
     return Response(content=audio_bytes, media_type="audio/wav")

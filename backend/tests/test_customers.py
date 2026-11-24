@@ -1,7 +1,8 @@
 import pytest
 
 @pytest.mark.asyncio
-async def test_customer_lifecycle(client):
+async def test_customer_lifecycle(auth_client):
+    client = auth_client
     # 1. Create customer
     create_payload = {
         "name": "Diwali Sweets Buyer",
