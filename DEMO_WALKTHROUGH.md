@@ -1,0 +1,112 @@
+# 🪔 UtsavOps — Complete Demo Walkthrough & Video Recording Guide
+
+This guide gives you the **exact script, timing, and click-by-click actions** to record your hackathon video or present a live demo to judges.
+
+---
+
+## ⚡ Quick Preparation
+
+### 1. Start the Backend & Frontend
+
+**Terminal 1 (Backend):**
+```bash
+cd /Users/sakthi/Documents/UtsavOps
+make backend
+```
+*Health check:* [http://localhost:8000/api/health](http://localhost:8000/api/health)
+
+**Terminal 2 (Frontend):**
+```bash
+cd /Users/sakthi/Documents/UtsavOps
+make frontend
+```
+*App UI:* [http://localhost:5173](http://localhost:5173)
+
+### 2. Ready-to-Use Demo Files
+
+Located in [`demo_assets/`](file:///Users/sakthi/Documents/UtsavOps/demo_assets/):
+* 📄 **Handwritten Chit Image:** `demo_assets/sample_festive_order_chit.png`
+* 🎙️ **Voice Note Audio:** `demo_assets/sample_diwali_voice_note_hindi.wav`
+
+---
+
+## 🎬 3-Minute Video Recording Script
+
+### [0:00 - 0:35] The Festive Commerce Problem
+
+* **Screen:** Open Dashboard (`http://localhost:5173`).
+* **Narration:**
+  > *"Every festive season across India—during Diwali, Dussehra, and Pongal—small retailers experience massive 10x to 25x order bursts. But festive orders don't come through clean e-commerce apps. They come through handwritten paper slips, regional WhatsApp voice notes, and phone calls. Retailers face two crises: manual transcription errors that delay orders, and sudden traffic spikes that crash local checkout servers. Meet **UtsavOps**: the self-healing AI operating system for India's festive commerce."*
+
+---
+
+### [0:35 - 1:20] Sarvam AI: Multilingual Order Intelligence
+
+* **Screen:** Click **Order Intake** in sidebar (`/intake`).
+* **Action 1 (Handwritten Chit):**
+  1. Under the **Handwritten Order Chit (Image)** tab, drag and drop `demo_assets/sample_festive_order_chit.png` (or click to upload).
+  2. Click **"Analyze Order with Sarvam AI"**.
+  3. Point to the extracted customer name (*Smt. Rajeshwari Iyer*), delivery address in Bengaluru, line items (*Special Kaju Katli, Motichoor Laddu, Dry Fruit Hamper*), and confidence score (*94%*).
+* **Action 2 (Voice Note):**
+  1. Switch to the **Voice Note Order (Audio)** tab.
+  2. Select language: **Hindi (हिन्दी)** or **Tamil (தமிழ்)**.
+  3. Upload `demo_assets/sample_diwali_voice_note_hindi.wav` and process.
+* **Narration:**
+  > *"Using **Sarvam Document AI**, handwritten festive chits are instantly extracted into structured JSON with itemized sweets and quantities. With **Sarvam Saaras v4**, regional voice notes in Hindi and Tamil are accurately transcribed, while **Mayura v1** normalizes catalog naming."*
+
+---
+
+### [1:20 - 1:55] Human-In-The-Loop Review & Bulbul Voice Confirmation
+
+* **Screen:** Click **Order Review** (`/orders`).
+* **Action:**
+  1. Click on the newly created order in the left panel.
+  2. Click **"Voice Confirmation"** (top right) to hear the synthesized **Sarvam Bulbul v3** audio confirmation.
+  3. Click **"Edit Information"** to demonstrate human-in-the-loop flexibility (e.g., adjust instructions or quantity).
+  4. Click **"Approve Order"** (green button).
+* **Narration:**
+  > *"Before any order is committed, human operators retain oversight to correct any missing details. With one click, **Sarvam Bulbul v3** generates a natural Indian language voice confirmation. Once approved, the order seamlessly transitions into dispatch and persistent storage."*
+
+---
+
+### [1:55 - 2:25] Google Cloud Dispatch Intelligence & Flagsmith VIP Prioritization
+
+* **Screen 1:** Click **Dispatch & Map** (`/dispatch`).
+* **Action:**
+  1. Select the approved order and click **"Validate Address"**.
+  2. Show Google Address Validation granularity, high-precision coordinates, and the contextual Air Quality Telemetry (AQI) card with the required safety disclaimer.
+* **Screen 2:** Click **VIP & Pricing** (`/vip-pricing`).
+* **Action:**
+  1. Show live **Flagsmith** feature flags (`festive_bundle_price`, `express_delivery_enabled`).
+  2. Click **"Trigger Surge Survival Mode"**.
+  3. Note that express delivery is strictly protected for verified VIP festive buyers, while non-VIP traffic is safely shed on the server side.
+* **Narration:**
+  > *"In dispatch, **Google Cloud Address Validation** verifies delivery addresses down to the premise and resolves geocodes for delivery routing, accompanied by contextual Air Quality metrics. Through live **Flagsmith** integration, our critical business rule activates: during surge mode, express delivery is strictly preserved for VIP festive buyers, preventing system saturation."*
+
+---
+
+### [2:25 - 3:00] Self-Healing AIOps: NudgeBee + Gemini BYOM
+
+* **Screen:** Click **AIOps Center** (`/aiops`).
+* **Action:**
+  1. Click **"Simulate Diwali Surge Incident"** — notice `utsavops-checkout` immediately turns RED (degraded with 4800ms p99 latency and 98% CPU).
+  2. Click **"NudgeBee / Gemini RCA"** — show the grounded root-cause analysis generated by Gemini BYOM.
+  3. Under allowlisted mitigations, click **"Approve"** and then **"Execute"**.
+  4. Click **"Verify Checkout Recovery"** — watch checkout latency instantly drop back to a healthy 110ms!
+  5. Click **Audit Log** (`/audit`) to show the tamper-evident log of all automated and human actions.
+* **Narration:**
+  > *"When peak festive traffic spikes cause checkout service degradation, our AIOps system detects the anomaly. **Gemini BYOM** performs evidence-grounded root-cause analysis and recommends strictly bounded, allowlisted mitigations. A human operator approves the mitigation, and recovery is verified in real-time, restoring checkout latency from 4.8 seconds down to 110 milliseconds. Every step is immutably recorded in the audit log."*
+
+---
+
+## 📋 Hackathon Submission Checklist
+
+- [x] Application runnable via `make backend` and `make frontend`
+- [x] 16/16 backend tests passing (`make test`)
+- [x] Production frontend build passing (`make build`)
+- [x] Sarvam AI integration (Document AI, Saaras, Mayura, Bulbul)
+- [x] Flagsmith integration (Live flags, VIP segment, Surge survival mode)
+- [x] Google Cloud APIs (Address Validation, Geocoding, Air Quality)
+- [x] NudgeBee & Gemini BYOM AIOps self-healing incident recovery
+- [x] Clear real vs. simulated disclosure matrix in [README.md](file:///Users/sakthi/Documents/UtsavOps/README.md)
+- [x] Ready-to-upload demo assets in [`demo_assets/`](file:///Users/sakthi/Documents/UtsavOps/demo_assets/)

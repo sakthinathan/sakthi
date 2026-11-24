@@ -1,5 +1,15 @@
 """
-Google Maps, Geocoding, Address Validation and Air Quality API Integration Service
+Reusable Google APIs Integration Service
+Provides server-side access to:
+- Google Address Validation API
+- Google Geocoding API
+- Google Air Quality API (Contextual Delivery Planning)
+
+Security & Architecture:
+- Server-side only: API keys are strictly kept on the backend
+- Configurable timeouts (15s default)
+- Exponential backoff retries via async_retry
+- Never logs or exposes credentials in API responses
 """
 import httpx
 from typing import Dict, Any, Optional
@@ -9,7 +19,7 @@ from app.config import get_settings
 
 logger = structlog.get_logger()
 
-# Realistic fallback mock location in Bengaluru for festive sweets delivery
+# Standard fallback mock location in Bengaluru for festive sweets delivery when offline
 MOCK_BENGALURU_COORDS = {
     "formatted_address": "12th Cross Rd, Malleshwaram, Bengaluru, Karnataka 560003, India",
     "latitude": 13.0033,
@@ -18,10 +28,20 @@ MOCK_BENGALURU_COORDS = {
     "is_mock": True
 }
 
+
 class GoogleMapsService:
-    def __init__(self):
+    """
+    Client for Google Cloud Maps, Address Validation, and Air Quality APIs.
+    """
+
+    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0):
         self.settings = get_settings()
-        self.api_key = self.settings.google_maps_api_key
+        self.api_key = self.settings.google_maps_api_key if api_key is None else api_key
+        self.timeout = timeout
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.api_key and not self.api_key.startswith("your-"))
 
     @async_retry(max_attempts=2, delay=1.0)
     async def validate_address(self, address_text: str) -> Dict[str, Any]:
@@ -29,8 +49,8 @@ class GoogleMapsService:
         Google Address Validation API
         POST https://addressvalidation.googleapis.com/v1:validateAddress?key={api_key}
         """
-        if not self.settings.has_google_maps:
-            logger.info("Using Google Address Validation mock fallback (no GOOGLE_MAPS_API_KEY)")
+        if not self.is_configured:
+            logger.info("Using Address Validation fallback (no live GOOGLE_MAPS_AQI_ADDR_API_KEY)")
             return {
                 "validated_address": f"{address_text.strip()}, Verified Postal Area",
                 "validation_status": "validated",
@@ -54,7 +74,7 @@ class GoogleMapsService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
                 res.raise_for_status()
                 data = res.json()
@@ -69,34 +89,36 @@ class GoogleMapsService:
                 return {
                     "validated_address": result.get("address", {}).get("formattedAddress", address_text),
                     "validation_status": val_status,
-                    "latitude": location.get("latitude"),
-                    "longitude": location.get("longitude"),
+                    "latitude": location.get("latitude", 13.0033),
+                    "longitude": location.get("longitude", 77.5694),
                     "geocoding_status": "OK" if location else "PARTIAL",
                     "validation_details": verdict,
                     "is_mock": False
                 }
         except Exception as e:
-            logger.error("Google Address Validation API error", error=str(e))
+            logger.error("Google Address Validation API error", error=type(e).__name__)
             return {
                 "validated_address": address_text,
                 "validation_status": "partial_match",
                 "latitude": 13.0033,
                 "longitude": 77.5694,
                 "geocoding_status": "ERROR_FALLBACK",
-                "validation_details": {"error": str(e)},
+                "validation_details": {"error": type(e).__name__},
                 "is_mock": True
             }
 
+    @async_retry(max_attempts=2, delay=1.0)
     async def geocode_address(self, address_text: str) -> Dict[str, Any]:
         """
         Google Geocoding API
+        GET https://maps.googleapis.com/maps/api/geocode/json?address={address}&key={api_key}&region=in
         """
-        if not self.settings.has_google_maps:
+        if not self.is_configured:
             return MOCK_BENGALURU_COORDS
 
         url = f"https://maps.googleapis.com/maps/api/geocode/json?address={address_text}&key={self.api_key}&region=in"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.get(url)
                 res.raise_for_status()
                 data = res.json()
@@ -111,19 +133,23 @@ class GoogleMapsService:
                         "is_mock": False
                     }
         except Exception as e:
-            logger.error("Geocoding failed", error=str(e))
+            logger.error("Google Geocoding API error", error=type(e).__name__)
 
         return MOCK_BENGALURU_COORDS
 
+    @async_retry(max_attempts=2, delay=1.0)
     async def get_air_quality(self, lat: float, lng: float) -> Dict[str, Any]:
         """
         Google Air Quality API
-        Contextual delivery planning info only
+        POST https://airquality.googleapis.com/v1/currentConditions:lookup?key={api_key}
+        Note: Provided strictly as contextual delivery-planning information only.
         """
-        disclaimer = "Air quality data is provided as contextual delivery-planning information only. It does not constitute proof that a delivery is safe or unsafe."
+        disclaimer = (
+            "Air quality data is provided as contextual delivery-planning information only. "
+            "It does not constitute proof that a delivery is safe or unsafe."
+        )
 
-        if not self.settings.has_google_maps:
-            # Typical moderate winter festive AQI in Indian urban metro
+        if not self.is_configured:
             return {
                 "aqi_value": 115,
                 "aqi_category": "Moderate Air Quality",
@@ -141,7 +167,7 @@ class GoogleMapsService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
                 res.raise_for_status()
                 data = res.json()
@@ -159,12 +185,12 @@ class GoogleMapsService:
                     "aqi_category": cat,
                     "dominant_pollutant": pollutant,
                     "health_recommendations": "Standard operational delivery precautions.",
-                    "location": f"Lat {lat}, Lng {lng}",
+                    "location": f"Lat {lat:.4f}, Lng {lng:.4f}",
                     "is_mock": False,
                     "disclaimer": disclaimer
                 }
         except Exception as e:
-            logger.error("Air Quality API call failed", error=str(e))
+            logger.error("Google Air Quality API error", error=type(e).__name__)
             return {
                 "aqi_value": 95,
                 "aqi_category": "Moderate",
@@ -173,5 +199,6 @@ class GoogleMapsService:
                 "is_mock": True,
                 "disclaimer": disclaimer
             }
+
 
 google_maps_service = GoogleMapsService()

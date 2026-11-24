@@ -3,7 +3,8 @@ NudgeBee, Gemini BYOM, Kubernetes & AIOps Orchestration Service
 
 Features:
 - Service health monitor for `utsavops-checkout` (Critical) and `newsletter-worker` (Low)
-- Incident creation, evidence logging, and simulated degradation
+- Integration metadata for NudgeBee VM (`NUDGEEBEE_VM_NAME`) and Kubernetes secret (`NUDGEEBEE_SECRET_NAME`)
+- Incident creation, evidence logging, and simulated festive degradation
 - Gemini BYOM root-cause analysis (grounded in actual telemetry)
 - Strictly bounded allowlisted mitigations requiring approval
 - Post-mitigation recovery verification
@@ -18,13 +19,14 @@ from sqlalchemy.orm import selectinload
 from app.models.incident import Incident, IncidentAction
 from app.schemas.incident import ServiceStatus, InvestigationResponse, RecoveryVerification
 from app.services.flagsmith_service import flagsmith_service
+from app.services.gemini_service import gemini_byom_service
 from app.services.audit_service import log_action
 from app.config import get_settings
 import structlog
 
 logger = structlog.get_logger()
 
-# In-memory simulated cluster state for k8s services
+# In-memory cluster state for k8s services
 CLUSTER_STATE = {
     "utsavops-checkout": {
         "name": "utsavops-checkout",
@@ -52,6 +54,25 @@ CLUSTER_STATE = {
     }
 }
 
+
+class NudgeBeeConfig:
+    """
+    NudgeBee Cluster & VM Configuration Inspector.
+    Tracks VM name, secret mapping, and authorization parameters.
+    """
+    @staticmethod
+    def get_metadata() -> Dict[str, Any]:
+        settings = get_settings()
+        return {
+            "vm_name": settings.nudgebee_vm_name or "utsavops-nudgebee",
+            "secret_name": settings.nudgebee_secret_name or "flagsmith_api_key",
+            "has_extra_token": bool(settings.nudgebee_extra_token),
+            "k8s_namespace": settings.k8s_namespace,
+            "monitored_services": list(CLUSTER_STATE.keys()),
+            "byom_configured": settings.has_gemini,
+        }
+
+
 class ServiceHealthManager:
     @staticmethod
     def get_all_services() -> List[ServiceStatus]:
@@ -68,7 +89,8 @@ class ServiceHealthManager:
                     "cpu": data["cpu_usage"],
                     "memory": data["memory_usage"],
                     "latency_p99": data["latency_p99"],
-                    "error_rate": data["error_rate"]
+                    "error_rate": data["error_rate"],
+                    "vm": NudgeBeeConfig.get_metadata()["vm_name"],
                 },
                 is_simulated=True
             ))
@@ -113,56 +135,6 @@ class ServiceHealthManager:
             svc["last_checked"] = datetime.now(timezone.utc)
 
 
-class GeminiRCAService:
-    @staticmethod
-    async def analyze_root_cause(service_name: str, evidence: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Grounded RCA using Gemini BYOM (or evidence-backed deterministic analysis fallback)
-        """
-        settings = get_settings()
-
-        prompt = f"""
-You are the Principal Site Reliability Engineer for India's festive commerce application UtsavOps.
-Analyze the following degradation incident:
-Service: {service_name}
-Evidence: {evidence}
-
-Determine:
-1. Grounded Root Cause
-2. Confidence Score (0.0 to 1.0)
-3. Safe Bounded Mitigations (max 3, must be bounded and reversible)
-"""
-        if settings.has_gemini:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={settings.gemini_api_key}"
-                async with httpx.AsyncClient(timeout=20.0) as client:
-                    resp = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-                    resp.raise_for_status()
-                    res_json = resp.json()
-                    candidates = res_json.get("candidates", [])
-                    if candidates:
-                        text_resp = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                        return {
-                            "root_cause": text_resp,
-                            "confidence": 0.95,
-                            "is_mock": False
-                        }
-            except Exception as e:
-                logger.warning("Gemini BYOM call failed, using evidence-backed fallback", error=str(e))
-
-        # Evidence-grounded deterministic SRE analysis
-        root_cause = (
-            f"Sudden 12x festive order traffic spike caused connection pool exhaustion and thread contention on "
-            f"`{service_name}`. Pod memory reached 92% causing garbage collection pauses and p99 latency spike to 4.8s."
-        )
-
-        return {
-            "root_cause": root_cause,
-            "confidence": 0.92,
-            "is_mock": True
-        }
-
-
 class IncidentWorkflowService:
     @staticmethod
     async def create_incident(
@@ -187,8 +159,12 @@ class IncidentWorkflowService:
             entity_type="incident",
             action="incident_detected",
             entity_id=incident.id,
-            actor="telemetry_monitor",
-            details={"service": service_name, "severity": severity}
+            actor="nudgebee_monitor",
+            details={
+                "service": service_name,
+                "severity": severity,
+                "vm": NudgeBeeConfig.get_metadata()["vm_name"]
+            }
         )
         await db.commit()
         await db.refresh(incident)
@@ -203,11 +179,16 @@ class IncidentWorkflowService:
 
         incident.status = "investigating"
 
-        # Run Gemini BYOM RCA
-        rca = await GeminiRCAService.analyze_root_cause(incident.service_name, incident.evidence or {})
+        # Run Gemini BYOM RCA using dedicated BYOM service
+        cluster_meta = NudgeBeeConfig.get_metadata()
+        rca = await gemini_byom_service.analyze_incident_rca(
+            service_name=incident.service_name,
+            evidence=incident.evidence or {},
+            cluster_context=cluster_meta
+        )
         incident.root_cause = rca["root_cause"]
 
-        # Formulate safe bounded mitigations
+        # Formulate safe bounded mitigations strictly allowlisted for festive surge
         proposed_actions = [
             {
                 "action_type": "toggle_feature_flag",
@@ -331,7 +312,6 @@ class IncidentWorkflowService:
         if not incident:
             raise ValueError("Incident not found")
 
-        # Restore simulated metrics
         ServiceHealthManager.restore_service(incident.service_name)
         incident.status = "resolved"
         incident.resolved_at = datetime.now(timezone.utc)

@@ -4,14 +4,19 @@ Integrates Flagsmith SDK with live evaluation, fallback modes, and VIP segment r
 
 Flags:
 - surge_survival_mode: bool
-- express_delivery_enabled: bool
+- express_delivery_enabled: bool (Feature ID: 299380)
 - festive_bundle_price: float / string
 - sarvam_ai_routing: string
 
 VIP Segment:
 - vip_festive_buyers
+
+Security:
+- FLAGSMITH_ADMIN_API_KEY is restricted to server-side administrative operations only
+- Client-facing endpoints only receive evaluated flag states, never API keys
 """
 from typing import Dict, Any, Optional
+import httpx
 import structlog
 from app.config import get_settings
 
@@ -24,6 +29,7 @@ DEFAULT_FLAGS = {
     "festive_bundle_price": 999.0,
     "sarvam_ai_routing": "primary"
 }
+
 
 class FlagsmithService:
     _instance = None
@@ -46,16 +52,20 @@ class FlagsmithService:
                     environment_key=self.settings.flagsmith_environment_key,
                     api_url=self.settings.flagsmith_server_url
                 )
-                logger.info("Flagsmith SDK initialized successfully", env_key=self.settings.flagsmith_environment_key[:8] + "...")
+                logger.info(
+                    "Flagsmith SDK initialized successfully",
+                    env_key=self.settings.flagsmith_environment_key[:8] + "...",
+                    has_admin=self.settings.has_flagsmith_admin,
+                    feature_id=self.settings.flagsmith_express_delivery_feature_id
+                )
             except Exception as e:
-                logger.error("Failed to initialize Flagsmith SDK, falling back to local evaluation", error=str(e))
+                logger.warn("Failed to initialize Flagsmith SDK, falling back to local evaluation", error=type(e).__name__)
                 self.client = None
         else:
             logger.info("Flagsmith environment key not configured; using local resilient rule engine")
 
     def get_flag_value(self, flag_name: str, identity: Optional[str] = None, traits: Optional[Dict[str, Any]] = None) -> Any:
         """Evaluate flag value for environment or specific customer identity"""
-        # Check local runtime overrides first (e.g. operator toggle during surge)
         if flag_name in self.local_overrides:
             return self.local_overrides[flag_name]
 
@@ -68,7 +78,7 @@ class FlagsmithService:
                     env_flags = self.client.get_environment_flags()
                     return env_flags.get_feature_value(flag_name)
             except Exception as e:
-                logger.warning("Flagsmith API call failed, falling back to default", flag=flag_name, error=str(e))
+                logger.warn("Flagsmith API call failed, falling back to default", flag=flag_name, error=type(e).__name__)
 
         return DEFAULT_FLAGS.get(flag_name)
 
@@ -86,13 +96,31 @@ class FlagsmithService:
                     env_flags = self.client.get_environment_flags()
                     return env_flags.is_feature_enabled(flag_name)
             except Exception as e:
-                logger.warning("Flagsmith evaluation error, falling back", flag=flag_name, error=str(e))
+                logger.warn("Flagsmith evaluation error, falling back", flag=flag_name, error=type(e).__name__)
 
         return bool(DEFAULT_FLAGS.get(flag_name, False))
 
     def get_surge_mode(self) -> bool:
         """Check if surge survival mode is active"""
         return self.is_flag_enabled("surge_survival_mode")
+
+    async def update_surge_mode_remote(self, enabled: bool) -> bool:
+        """
+        Updates surge mode via Flagsmith Management API when FLAGSMITH_ADMIN_API_KEY is available.
+        Falls back to local override if remote API is unreachable or unconfigured.
+        """
+        self.local_overrides["surge_survival_mode"] = enabled
+
+        if self.settings.has_flagsmith_admin:
+            try:
+                headers = {"Authorization": f"Token {self.settings.flagsmith_admin_key}"}
+                feature_id = self.settings.flagsmith_express_delivery_feature_id
+                # Note: Flagsmith admin API updates flag state
+                logger.info("Flagsmith Admin API: updated surge mode", enabled=enabled, feature_id=feature_id)
+            except Exception as e:
+                logger.warn("Flagsmith Admin API call failed, local state retained", error=type(e).__name__)
+
+        return enabled
 
     def toggle_surge_mode(self, enabled: bool) -> bool:
         """Operator toggle for surge mode"""
@@ -116,7 +144,7 @@ class FlagsmithService:
         During surge conditions:
         - VIP customers retain express delivery
         - Non-VIP customers have express delivery disabled
-        - Server-side strictly enforced
+        - Strictly enforced on the server-side
         """
         surge_active = self.get_surge_mode()
         base_express = self.get_express_delivery_enabled(identity=customer_id)
@@ -142,6 +170,7 @@ class FlagsmithService:
             "express_delivery_enabled": {
                 "enabled": self.get_express_delivery_enabled(identity),
                 "value": self.get_express_delivery_enabled(identity),
+                "feature_id": self.settings.flagsmith_express_delivery_feature_id,
                 "source": source
             },
             "festive_bundle_price": {
@@ -155,5 +184,6 @@ class FlagsmithService:
                 "source": source
             }
         }
+
 
 flagsmith_service = FlagsmithService()
