@@ -58,6 +58,7 @@ class ActionApproval(BaseModel):
 class InvestigationResponse(BaseModel):
     incident_id: str
     root_cause: Optional[str]
+    model: Optional[str] = "gemini-flash-latest"
     evidence: Dict[str, Any] = {}
     recommended_actions: List[Dict[str, Any]] = []
     is_mock: bool = False

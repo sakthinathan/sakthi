@@ -1,5 +1,6 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -9,10 +10,19 @@ import {
   Activity, 
   ShieldCheck,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  LogOut,
+  User
 } from 'lucide-react';
 
 export default function Layout({ surgeMode = false }) {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
   const navItems = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/intake', label: 'Order Intake', icon: FileText },
@@ -96,7 +106,21 @@ export default function Layout({ surgeMode = false }) {
             </span>
           </div>
           <div className="flex items-center gap-4 text-xs text-slate-500">
-            <span>Operator: SRE Cockpit</span>
+            <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
+              <User className="w-3.5 h-3.5 text-amber-600" />
+              <span className="font-semibold text-slate-800">{user?.name || 'Operator'}</span>
+              <span className="text-[10px] bg-amber-500/10 text-amber-800 font-medium px-1.5 py-0.5 rounded uppercase">
+                {user?.role || 'SRE'}
+              </span>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Sign out of operator session"
+              className="flex items-center gap-1.5 text-slate-600 hover:text-rose-600 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 px-2.5 py-1 rounded-lg transition font-medium"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Logout</span>
+            </button>
           </div>
         </header>
 

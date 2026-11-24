@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Toast from '../components/Toast';
+import ProviderBadge from '../components/ProviderBadge';
 import { 
   Check, 
   X, 
@@ -139,6 +140,11 @@ export default function OrderReview() {
                     <Crown className="w-3 h-3 text-amber-600" /> VIP ORDER
                   </span>
                 )}
+                <ProviderBadge
+                  provider={selectedOrder.order_input?.input_type === 'audio' ? 'sarvam_saaras_stt' : 'sarvam_document_ai'}
+                  status="live"
+                  isMock={false}
+                />
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 Intake Source: {selectedOrder.order_input?.input_type?.toUpperCase() || 'MANUAL'}

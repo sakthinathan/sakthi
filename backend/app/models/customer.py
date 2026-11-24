@@ -11,7 +11,7 @@ class Customer(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(20), unique=True, index=True)
     email: Mapped[Optional[str]] = mapped_column(String(255))
     tier: Mapped[str] = mapped_column(String(20), default="regular")  # regular, vip, premium
     total_orders: Mapped[int] = mapped_column(Integer, default=0)

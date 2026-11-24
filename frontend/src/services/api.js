@@ -8,6 +8,11 @@ async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const headers = options.headers || {};
 
+  const token = localStorage.getItem('utsavops_token');
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   if (!(options.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
@@ -32,6 +37,11 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
+  // Auth
+  login: (email, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  getMe: () => request('/auth/me'),
+
   // Health & Dashboard
   getHealth: () => request('/health'),
   getDashboardStats: () => request('/dashboard/stats'),

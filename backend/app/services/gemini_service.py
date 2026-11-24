@@ -162,6 +162,7 @@ class GeminiBYOMService:
             return {
                 "root_cause": res.get("text"),
                 "confidence": 0.95,
+                "model": res.get("model", self.client.model),
                 "source": "gemini_byom_live",
                 "is_mock": False
             }
@@ -174,6 +175,7 @@ class GeminiBYOMService:
         return {
             "root_cause": fallback_rca,
             "confidence": 0.92,
+            "model": self.client.model,
             "source": "gemini_byom_grounded_fallback",
             "is_mock": True
         }

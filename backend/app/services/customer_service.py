@@ -17,12 +17,12 @@ async def get_or_create_customer(
     """Find existing customer by phone or name, or create a new one"""
     customer = None
     if phone:
-        stmt = select(Customer).where(Customer.phone == phone)
-        customer = (await db.execute(stmt)).scalar_one_or_none()
+        stmt = select(Customer).where(Customer.phone == phone).order_by(Customer.created_at.asc())
+        customer = (await db.execute(stmt)).scalars().first()
 
     if not customer and name:
-        stmt = select(Customer).where(Customer.name.ilike(name))
-        customer = (await db.execute(stmt)).scalar_one_or_none()
+        stmt = select(Customer).where(Customer.name.ilike(name)).order_by(Customer.created_at.asc())
+        customer = (await db.execute(stmt)).scalars().first()
 
     if not customer:
         customer = Customer(

@@ -14,6 +14,7 @@ Security & Architecture:
 - Dual-key support: GOOGLE_MAPS_AQI_ADDR_API_KEY (priority) or GOOGLE_MAPS_API_KEY
 """
 import httpx
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from app.utils.retry import async_retry
 import structlog
@@ -192,6 +193,7 @@ class GoogleMapsService:
                 "provider": "google_air_quality",
                 "status": "not_configured",
                 "is_mock": True,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
                 "disclaimer": AQI_DISCLAIMER
             }
 
@@ -224,6 +226,7 @@ class GoogleMapsService:
                     "provider": "google_air_quality",
                     "status": "live",
                     "is_mock": False,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                     "disclaimer": AQI_DISCLAIMER
                 }
         except Exception as e:
@@ -238,6 +241,7 @@ class GoogleMapsService:
                 "status": "error",
                 "error": type(e).__name__,
                 "is_mock": True,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
                 "disclaimer": AQI_DISCLAIMER
             }
 

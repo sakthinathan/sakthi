@@ -54,6 +54,13 @@ async def get_air_quality_endpoint(order_id: str, db: AsyncSession = Depends(get
         raise HTTPException(status_code=400, detail="Delivery coordinates not yet resolved. Validate address first.")
 
     res = await google_maps_service.get_air_quality(float(dispatch.latitude), float(dispatch.longitude))
+
+    # Persist updated telemetry to dispatch record
+    if res.get("aqi_value") is not None:
+        dispatch.aqi_value = res.get("aqi_value")
+        dispatch.aqi_category = res.get("aqi_category")
+        await db.commit()
+
     return AirQualityResponse(
         aqi_value=res.get("aqi_value"),
         aqi_category=res.get("aqi_category"),
@@ -62,6 +69,7 @@ async def get_air_quality_endpoint(order_id: str, db: AsyncSession = Depends(get
         location=res.get("location"),
         is_mock=res.get("is_mock", True),
         disclaimer=res.get("disclaimer"),
+        updated_at=res.get("updated_at"),
         provider_metadata={
             "provider": res.get("provider", "google_air_quality"),
             "status": res.get("status", "live" if not res.get("is_mock") else "fallback"),
