@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.models.order import Order, OrderItem, OrderInput
 from app.models.customer import Customer
 from app.models.dispatch import DispatchDetail
+from app.services.flagsmith_service import flagsmith_service
 from app.services.audit_service import log_action
 import structlog
 
@@ -132,9 +133,13 @@ async def create_order_from_extraction(
     return order
 
 async def apply_vip_rules(db: AsyncSession, order: Order) -> Order:
-    """Evaluate VIP rules and update priority/express flag"""
-    if order.customer and (order.customer.is_vip or order.customer.tier in ["vip", "premium"]):
-        order.is_vip_order = True
-        order.priority = "high"
-        order.is_express = True
+    """Evaluate VIP rules and update priority/express flag using Flagsmith live identity traits"""
+    is_vip = bool(order.customer and (order.customer.is_vip or order.customer.tier in ["vip", "premium"]))
+    customer_id = str(order.customer_id) if order.customer_id else None
+
+    vip_eval = flagsmith_service.evaluate_vip_express_delivery(customer_id=customer_id, is_vip=is_vip)
+
+    order.is_vip_order = is_vip
+    order.priority = "high" if is_vip else "normal"
+    order.is_express = vip_eval["allowed"]
     return order

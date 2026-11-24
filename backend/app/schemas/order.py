@@ -74,6 +74,7 @@ class OrderIntakeResponse(BaseModel):
     confidence: Optional[float]
     message: str
     is_mock: bool = False
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class OrderReviewUpdate(BaseModel):

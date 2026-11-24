@@ -263,8 +263,12 @@ class IncidentWorkflowService:
 
         # Safe Allowlisted execution
         if action.action_type == "toggle_feature_flag":
-            flagsmith_service.toggle_surge_mode(True)
-            result = {"surge_mode": True, "message": "Flagsmith Surge Survival Mode ENABLED"}
+            remote_res = await flagsmith_service.update_surge_mode_remote(True)
+            result = {
+                "surge_mode": True,
+                "flagsmith_management_api": remote_res,
+                "message": f"Flagsmith Surge Survival Mode engaged (Source: {remote_res.get('source')})"
+            }
             rollback = {"action": "toggle_feature_flag", "target_state": False}
 
         elif action.action_type == "scale_deployment":

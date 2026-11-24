@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Toast from '../components/Toast';
+import ProviderBadge from '../components/ProviderBadge';
 import { UploadCloud, Mic, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function OrderIntake() {
@@ -53,11 +54,20 @@ export default function OrderIntake() {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Multilingual Order Intake</h2>
-          <p className="text-xs text-slate-500">
-            Powered by Sarvam AI: Document AI (handwritten chits), Saaras v4 (speech-to-text), and Mayura v1 (translation)
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Multilingual Order Intake</h2>
+            <p className="text-xs text-slate-500">
+              Powered by Sarvam AI: Document AI (handwritten chits), Saaras v4 (speech-to-text), and Mayura v1 (translation)
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <ProviderBadge
+              provider={activeTab === 'image' ? 'sarvam_document_ai' : 'sarvam_saaras_stt'}
+              metadata={extractedResult?.provider_metadata}
+              isMock={extractedResult ? extractedResult.is_mock : undefined}
+            />
+          </div>
         </div>
 
         {/* Tab Selection */}
@@ -180,8 +190,15 @@ export default function OrderIntake() {
               <CheckCircle2 className="w-5 h-5" />
               Order Created: {extractedResult.order_number}
             </div>
-            <div className="text-xs text-slate-500">
-              Confidence: <span className="font-bold text-emerald-600">{(extractedResult.confidence * 100).toFixed(0)}%</span>
+            <div className="flex items-center gap-3">
+              <ProviderBadge
+                provider={extractedResult.provider_metadata?.provider || (activeTab === 'image' ? 'sarvam_document_ai' : 'sarvam_saaras_stt')}
+                metadata={extractedResult.provider_metadata}
+                isMock={extractedResult.is_mock}
+              />
+              <div className="text-xs text-slate-500">
+                Confidence: <span className="font-bold text-emerald-600">{(extractedResult.confidence * 100).toFixed(0)}%</span>
+              </div>
             </div>
           </div>
 

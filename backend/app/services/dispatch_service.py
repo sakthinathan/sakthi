@@ -29,6 +29,7 @@ async def validate_and_geocode_order(
 
     # 1. Validate Address
     val_res = await google_maps_service.validate_address(address)
+    dispatch._val_res = val_res
     dispatch.delivery_address = address
     dispatch.validated_address = val_res.get("validated_address")
     dispatch.validation_status = val_res.get("validation_status", "validated")
