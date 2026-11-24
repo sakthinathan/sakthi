@@ -60,14 +60,15 @@ async def evaluate_for_customer(
             }
 
     flags = flagsmith_service.get_all_flags(identity=req.customer_id, traits=traits)
-    allow_express = flagsmith_service.should_allow_express(req.customer_id, is_vip)
+    vip_eval = flagsmith_service.evaluate_vip_express_delivery(req.customer_id, is_vip)
+    allow_express = vip_eval["allowed"]
 
     # Save evaluation snapshot
     snapshot = FeatureFlagSnapshot(
         flag_name="surge_survival_mode",
-        flag_value={"express_allowed": allow_express, "is_vip": is_vip},
+        flag_value={"express_allowed": allow_express, "is_vip": is_vip, "vip_evaluation": vip_eval},
         evaluated_for=req.customer_id,
-        source="flagsmith"
+        source=vip_eval.get("source", "flagsmith")
     )
     db.add(snapshot)
     await db.commit()
@@ -76,6 +77,7 @@ async def evaluate_for_customer(
         "customer_id": req.customer_id,
         "is_vip": is_vip,
         "express_delivery_allowed": allow_express,
+        "vip_evaluation": vip_eval,
         "flags": flags
     }
 
@@ -88,18 +90,19 @@ async def toggle_surge_mode(
     Operator surge survival mode trigger.
     Protects checkout during festive surges.
     """
-    new_state = flagsmith_service.toggle_surge_mode(req.enabled)
+    res = await flagsmith_service.update_surge_mode_remote(req.enabled)
 
     await log_action(
         db,
         entity_type="feature_flag",
         action="surge_mode_toggled",
         actor="operator",
-        details={"enabled": new_state, "reason": req.reason or "Manual operational adjustment"}
+        details={"enabled": req.enabled, "management_api": res, "reason": req.reason or "Manual operational adjustment"}
     )
     await db.commit()
 
     return {
-        "surge_survival_mode": new_state,
-        "message": f"Surge survival mode {'ENABLED - Express delivery restricted to VIPs only' if new_state else 'DISABLED - Normal delivery limits restored'}"
+        "surge_survival_mode": req.enabled,
+        "management_api": res,
+        "message": f"Surge survival mode {'ENABLED - Express delivery restricted to VIPs only' if req.enabled else 'DISABLED - Normal delivery limits restored'}"
     }

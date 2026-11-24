@@ -26,6 +26,7 @@ class AirQualityResponse(BaseModel):
     location: Optional[str]
     is_mock: bool = False
     disclaimer: str = "Air quality data is provided as contextual delivery-planning information only. It does not constitute proof that a delivery is safe or unsafe."
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class DispatchResponse(BaseModel):
@@ -43,5 +44,6 @@ class DispatchResponse(BaseModel):
     estimated_delivery: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    provider_metadata: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}

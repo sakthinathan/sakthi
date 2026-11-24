@@ -2,7 +2,7 @@
 
 > **Festive Hacks 2026** | Multi-Agent End-to-End Autonomous Festive Operating System
 
-[![Tests](https://img.shields.io/badge/tests-6%20passed-emerald)](./backend/tests)
+[![Tests](https://img.shields.io/badge/tests-27%20passed-emerald)](./backend/tests)
 [![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19.0-61dafb)](https://react.dev)
@@ -113,8 +113,8 @@ Small retailers face two catastrophic bottlenecks:
 
 ### 1. Clone & Set Up
 ```bash
-git clone https://github.com/your-username/UtsavOps.git
-cd UtsavOps
+git clone https://github.com/sakthinathan/sakthi.git
+cd sakthi
 
 # Setup .env and frontend dependencies
 make setup
@@ -129,7 +129,7 @@ make seed
 ```bash
 make test
 ```
-*Expected: 6/6 pytest suites passing in < 0.2s.*
+*Expected: 27/27 pytest tests passing in < 0.4s.*
 
 ### 4. Start the Application
 
@@ -196,15 +196,16 @@ In compliance with the Festive Hacks 2026 hackathon standards:
 
 | Integration | Real Implementation | Labeled Fallback Mode |
 |-------------|---------------------|-----------------------|
-| **Sarvam Document AI** | Real HTTP calls to `api.sarvam.ai/parse/image` when `SARVAM_API_KEY` is set | High-fidelity festive Indian sweets catalog extraction with `is_mock: true` |
+| **Sarvam Document AI** | Real `sarvamai` SDK async-job workflow (`doc_ai.extract` -> poll `get_status` -> `get_results`) with strict JSON schema | Labelled festive Indian sweets catalog extraction with `is_mock: true` and `status: "fallback"` |
 | **Sarvam Saaras v4** | Real multipart HTTP upload to `api.sarvam.ai/speech-to-text` | Synthetic regional Hindi/Tamil audio transcription with `is_mock: true` |
 | **Sarvam Mayura v1** | Real HTTP call to `api.sarvam.ai/translate` | Local language normalizer |
-| **Sarvam Bulbul v3** | Real TTS HTTP call to `api.sarvam.ai/text-to-speech` | Synthesized valid WAV audio stream |
-| **Flagsmith** | Real Python SDK client querying Flagsmith Edge API when environment key is provided | Local resilient rule engine with identical evaluation semantics |
-| **Google Address Validation & Geocoding** | Real Google Cloud API requests when `GOOGLE_MAPS_API_KEY` is set | Indian metro geocoding fallback (Malleshwaram Bengaluru coordinates) |
-| **Google Air Quality API** | Real Google Air Quality lookup | Contextual AQI telemetry (with safety disclaimer) |
-| **NudgeBee & Gemini BYOM** | Real Gemini Generative Language API calls when `GEMINI_API_KEY` is set | Grounded evidence-based SRE rule engine |
-| **Kubernetes (k3s)** | Production-ready YAML manifests in `k8s/` | In-memory cluster telemetry state for live interactive demonstrations without requiring an active cloud cluster |
+| **Sarvam Bulbul v3** | Real TTS HTTP call to `api.sarvam.ai/text-to-speech` (speakers: ritu, aditya, ashutosh, priya) | Synthesized valid WAV audio stream |
+| **Flagsmith** | Real Python SDK client querying Flagsmith Edge API with `vip_festive_buyers` identity traits (`tier: VIP`) | Local resilient rule engine with identical evaluation semantics |
+| **Flagsmith Management API** | Real HTTP PATCH against `api.flagsmith.com/api/v1/environments/{key}/feature-states/` using `FLAGSMITH_ADMIN_API_KEY` | Explicit local override reporting `source: "local_override"` |
+| **Google Address Validation & Geocoding** | Real Google Cloud API requests (`GOOGLE_MAPS_AQI_ADDR_API_KEY` or `GOOGLE_MAPS_API_KEY`) | Explicitly labelled fallback coordinates (Malleshwaram Bengaluru coordinates) with `is_mock: true` |
+| **Google Air Quality API** | Real Google Air Quality lookup (`currentConditions:lookup`) | Contextual AQI telemetry with mandatory safety disclaimer preserved |
+| **NudgeBee & Gemini BYOM** | Real Gemini Generative Language API calls (`gemini-flash-latest`, `gemini-flash-lite-latest`) | Grounded evidence-based SRE rule engine |
+| **Kubernetes (k3s)** | Live k3s cluster running on GCP VM `utsavops-nudgebee` with active `utsavops` workloads | In-memory cluster telemetry state for standalone local tests |
 
 ---
 

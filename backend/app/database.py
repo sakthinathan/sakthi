@@ -143,7 +143,7 @@ async def init_db():
 
     if not _is_sqlite_mode:
         logger.info(
-            "Attempting connection to Cloud SQL PostgreSQL",
+            "Connecting to Cloud SQL PostgreSQL",
             host=settings.db_host,
             database=settings.db_name,
             region=settings.gcp_region,
@@ -155,22 +155,16 @@ async def init_db():
             logger.info("Successfully connected to Cloud SQL PostgreSQL and verified schema")
             return
         except Exception as e:
-            logger.warn(
-                "Cloud SQL PostgreSQL connection unavailable (timeout/firewall/proxy needed); "
-                "activating resilient local SQLite fallback",
+            logger.error(
+                "Cloud SQL PostgreSQL connection failed in live mode. "
+                "Silent SQLite fallback is disabled to prevent data desynchronization.",
                 host=settings.db_host,
-                reason=type(e).__name__,
+                error=type(e).__name__,
             )
-            # Switch to local SQLite fallback
-            _active_db_url = "sqlite+aiosqlite:///./utsavops.db"
-            _is_sqlite_mode = True
-            await engine.dispose()
-            engine = _build_engine(_active_db_url, True)
-            AsyncSessionLocal = async_sessionmaker(
-                engine,
-                class_=AsyncSession,
-                expire_on_commit=False,
-            )
+            raise RuntimeError(
+                f"Configured live database connection to Cloud SQL PostgreSQL failed: {type(e).__name__}. "
+                "A configured live database must not silently fall back to SQLite."
+            ) from e
 
     # SQLite table initialization
     async with engine.begin() as conn:

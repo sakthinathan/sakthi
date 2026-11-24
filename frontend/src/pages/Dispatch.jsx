@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Toast from '../components/Toast';
 import StatusBadge from '../components/StatusBadge';
+import ProviderBadge from '../components/ProviderBadge';
 import { 
   Truck, 
   MapPin, 
@@ -134,9 +135,16 @@ export default function Dispatch() {
         {dispatchInfo && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Google Address Validation
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Google Address Validation
+                </span>
+                <ProviderBadge
+                  provider="google_address_validation"
+                  metadata={dispatchInfo.provider_metadata}
+                  isMock={dispatchInfo.is_mock}
+                />
+              </div>
               <div className="flex items-center gap-2">
                 <StatusBadge status={dispatchInfo.validation_status} />
                 <span className="text-xs text-slate-500">Status: {dispatchInfo.geocoding_status || 'OK'}</span>
@@ -163,10 +171,19 @@ export default function Dispatch() {
 
             {/* Contextual Air Quality Telemetry */}
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                <Wind className="w-3.5 h-3.5 text-slate-400" />
-                Air Quality Telemetry (Contextual)
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <Wind className="w-3.5 h-3.5 text-slate-400" />
+                  Air Quality Telemetry (Contextual)
+                </span>
+                {aqiData && (
+                  <ProviderBadge
+                    provider="google_air_quality"
+                    metadata={aqiData.provider_metadata}
+                    isMock={aqiData.is_mock}
+                  />
+                )}
+              </div>
               {aqiData ? (
                 <>
                   <div className="flex items-center gap-3">

@@ -71,6 +71,13 @@ async def intake_handwritten_image(
     order = await create_order_from_extraction(db, ext_data, order_input.id, idempotency_key)
     await db.commit()
 
+    provider_meta = {
+        "provider": extraction.get("provider", "sarvam_document_ai"),
+        "status": extraction.get("status", "live" if not extraction.get("is_mock") else "fallback"),
+        "is_mock": extraction.get("is_mock", False),
+        "failure_reason": extraction.get("failure_reason")
+    }
+
     return OrderIntakeResponse(
         order_id=order.id,
         order_number=order.order_number,
@@ -79,7 +86,8 @@ async def intake_handwritten_image(
         extracted_data=ext_data,
         confidence=confidence,
         message="Handwritten order chit successfully analyzed via Sarvam Document AI",
-        is_mock=extraction.get("is_mock", False)
+        is_mock=extraction.get("is_mock", False),
+        provider_metadata=provider_meta
     )
 
 @router.post("/intake/audio", response_model=OrderIntakeResponse)
@@ -120,6 +128,13 @@ async def intake_voice_order(
     order = await create_order_from_extraction(db, ext_data, order_input.id, idempotency_key)
     await db.commit()
 
+    provider_meta = {
+        "provider": transcription.get("provider", "sarvam_saaras_stt"),
+        "status": transcription.get("status", "live" if not transcription.get("is_mock") else "fallback"),
+        "is_mock": transcription.get("is_mock", False),
+        "failure_reason": transcription.get("failure_reason")
+    }
+
     return OrderIntakeResponse(
         order_id=order.id,
         order_number=order.order_number,
@@ -128,7 +143,8 @@ async def intake_voice_order(
         extracted_data=ext_data,
         confidence=confidence,
         message=f"Regional voice note transcribed and normalized via Sarvam Saaras v4 ({language})",
-        is_mock=transcription.get("is_mock", False)
+        is_mock=transcription.get("is_mock", False),
+        provider_metadata=provider_meta
     )
 
 @router.get("", response_model=OrderListResponse)

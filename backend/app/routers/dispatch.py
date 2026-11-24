@@ -35,7 +35,15 @@ async def validate_address_endpoint(
 ):
     """Validate address via Google Address Validation API and update coordinates"""
     dispatch = await validate_and_geocode_order(db, order_id, req.address)
-    return DispatchResponse.model_validate(dispatch)
+    val_res = getattr(dispatch, "_val_res", {})
+    resp = DispatchResponse.model_validate(dispatch)
+    resp.provider_metadata = {
+        "provider": val_res.get("provider", "google_address_validation"),
+        "status": val_res.get("status", "live" if not val_res.get("is_mock") else "fallback"),
+        "is_mock": val_res.get("is_mock", False),
+        "error": val_res.get("error")
+    }
+    return resp
 
 @router.get("/{order_id}/air-quality", response_model=AirQualityResponse)
 async def get_air_quality_endpoint(order_id: str, db: AsyncSession = Depends(get_db)):
@@ -53,5 +61,11 @@ async def get_air_quality_endpoint(order_id: str, db: AsyncSession = Depends(get
         health_recommendations=res.get("health_recommendations"),
         location=res.get("location"),
         is_mock=res.get("is_mock", True),
-        disclaimer=res.get("disclaimer")
+        disclaimer=res.get("disclaimer"),
+        provider_metadata={
+            "provider": res.get("provider", "google_air_quality"),
+            "status": res.get("status", "live" if not res.get("is_mock") else "fallback"),
+            "is_mock": res.get("is_mock", True),
+            "error": res.get("error")
+        }
     )

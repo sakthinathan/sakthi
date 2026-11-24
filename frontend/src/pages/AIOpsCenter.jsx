@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Toast from '../components/Toast';
 import StatusBadge from '../components/StatusBadge';
+import ProviderBadge from '../components/ProviderBadge';
 import { 
   Activity, 
   AlertTriangle, 
@@ -138,11 +139,19 @@ export default function AIOpsCenter() {
       {/* Cluster Overview Header */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-amber-500" />
-            NudgeBee & Kubernetes AIOps Cockpit
-          </h2>
-          <p className="text-xs text-slate-500">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-amber-500" />
+              NudgeBee & Kubernetes AIOps Cockpit
+            </h2>
+            <ProviderBadge
+              provider="gemini_byom"
+              status="live"
+              isMock={false}
+              label="Gemini BYOM RCA"
+            />
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
             Automated anomaly detection, Gemini BYOM root-cause analysis, and human-authorized bounded mitigations.
           </p>
         </div>

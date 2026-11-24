@@ -14,6 +14,9 @@ alembic==1.14.1
 httpx==0.28.1
 aiofiles==24.1.0
 
+# Sarvam AI SDK
+sarvamai>=0.1.0
+
 # Flagsmith
 flagsmith==3.7.1
 
