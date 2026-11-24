@@ -156,6 +156,10 @@ class Settings(BaseSettings):
         return bool(self.nudgebee_vm_name and self.nudgebee_secret_name)
 
     @property
+    def has_nudgebee(self) -> bool:
+        return self.has_nudgebee_config
+
+    @property
     def database_url(self) -> str:
         """
         Constructs a secure, properly URL-encoded PostgreSQL connection string using asyncpg driver.

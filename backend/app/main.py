@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
         sarvam=settings.has_sarvam,
         flagsmith=settings.has_flagsmith,
         google_maps=settings.has_google_maps,
-        nudgebee=settings.has_nudgebee,
+        nudgebee=settings.has_nudgebee_config,
         gemini=settings.has_gemini,
     )
 
