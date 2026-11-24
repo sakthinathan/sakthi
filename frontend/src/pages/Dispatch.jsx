@@ -11,7 +11,9 @@ import {
   CheckCircle, 
   AlertTriangle,
   ExternalLink,
-  Navigation
+  Navigation,
+  RefreshCw,
+  Clock
 } from 'lucide-react';
 
 export default function Dispatch() {
@@ -20,6 +22,7 @@ export default function Dispatch() {
   const [dispatchInfo, setDispatchInfo] = useState(null);
   const [aqiData, setAqiData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [aqiLoading, setAqiLoading] = useState(false);
   const [addressInput, setAddressInput] = useState('');
   const [toast, setToast] = useState(null);
 
@@ -48,17 +51,27 @@ export default function Dispatch() {
       setDispatchInfo(data);
       setAddressInput(data.delivery_address || '');
       if (data.latitude && data.longitude) {
-        const aqi = await api.getAirQuality(orderId);
-        setAqiData(aqi);
+        setAqiLoading(true);
+        try {
+          const aqi = await api.getAirQuality(orderId);
+          setAqiData(aqi);
+        } finally {
+          setAqiLoading(false);
+        }
+      } else {
+        setAqiData(null);
       }
     } catch (err) {
       console.log('Dispatch load note:', err);
+      setAqiLoading(false);
     }
   }
 
   const handleOrderChange = async (e) => {
     const id = e.target.value;
     setSelectedOrderId(id);
+    setDispatchInfo(null);
+    setAqiData(null);
     await loadDispatch(id);
   };
 
@@ -70,8 +83,13 @@ export default function Dispatch() {
       setDispatchInfo(updated);
       setToast({ message: 'Address validated via Google Address Validation API', type: 'success' });
       if (updated.latitude && updated.longitude) {
-        const aqi = await api.getAirQuality(selectedOrderId);
-        setAqiData(aqi);
+        setAqiLoading(true);
+        try {
+          const aqi = await api.getAirQuality(selectedOrderId);
+          setAqiData(aqi);
+        } finally {
+          setAqiLoading(false);
+        }
       }
     } catch (err) {
       setToast({ message: err.message, type: 'error' });
@@ -80,7 +98,25 @@ export default function Dispatch() {
     }
   };
 
+  const handleRefreshAqi = async () => {
+    if (!selectedOrderId) return;
+    setAqiLoading(true);
+    try {
+      const aqi = await api.getAirQuality(selectedOrderId);
+      setAqiData(aqi);
+      setToast({ message: 'Live air quality telemetry refreshed', type: 'success' });
+    } catch (err) {
+      setToast({ message: `AQI refresh failed: ${err.message}`, type: 'error' });
+    } finally {
+      setAqiLoading(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner message="Loading delivery & geocoding data..." />;
+
+  const formattedTime = aqiData?.updated_at 
+    ? new Date(aqiData.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) 
+    : null;
 
   return (
     <div className="space-y-6">
@@ -170,33 +206,70 @@ export default function Dispatch() {
             </div>
 
             {/* Contextual Air Quality Telemetry */}
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                   <Wind className="w-3.5 h-3.5 text-slate-400" />
                   Air Quality Telemetry (Contextual)
                 </span>
-                {aqiData && (
-                  <ProviderBadge
-                    provider="google_air_quality"
-                    metadata={aqiData.provider_metadata}
-                    isMock={aqiData.is_mock}
-                  />
-                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRefreshAqi}
+                    disabled={aqiLoading || !dispatchInfo?.latitude}
+                    title="Refresh latest air quality telemetry"
+                    className="flex items-center gap-1 text-[11px] bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 px-2 py-0.5 rounded transition disabled:opacity-50 font-medium cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${aqiLoading ? 'animate-spin text-amber-600' : ''}`} />
+                    <span>Refresh AQI</span>
+                  </button>
+                  {aqiData && (
+                    <ProviderBadge
+                      provider="google_air_quality"
+                      metadata={aqiData.provider_metadata}
+                      isMock={aqiData.is_mock}
+                    />
+                  )}
+                </div>
               </div>
-              {aqiData ? (
+
+              {aqiLoading ? (
+                <div className="py-6 flex flex-col items-center justify-center text-slate-500 gap-2">
+                  <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />
+                  <span className="text-xs">Fetching latest local air quality...</span>
+                </div>
+              ) : aqiData ? (
                 <>
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl font-black text-amber-600">{aqiData.aqi_value}</span>
-                    <span className="text-xs font-bold text-slate-800">{aqiData.aqi_category}</span>
+                  <div className="flex items-baseline justify-between">
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-3xl font-black text-amber-600">{aqiData.aqi_value}</span>
+                      <span className="text-xs font-bold text-slate-800">{aqiData.aqi_category}</span>
+                    </div>
+                    {formattedTime && (
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formattedTime}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[11px] text-slate-600">{aqiData.health_recommendations}</p>
+
+                  {aqiData.dominant_pollutant && (
+                    <div className="text-[11px] text-slate-600">
+                      Dominant Pollutant: <span className="font-semibold uppercase">{aqiData.dominant_pollutant}</span>
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-slate-600 bg-amber-500/5 p-2 rounded border border-amber-500/15">
+                    {aqiData.health_recommendations}
+                  </p>
+
                   <p className="text-[10px] text-slate-400 italic pt-1 border-t border-slate-200">
                     {aqiData.disclaimer}
                   </p>
                 </>
               ) : (
-                <p className="text-xs text-slate-500">Validate address to fetch local air quality metrics.</p>
+                <p className="text-xs text-slate-500">
+                  Validate address with coordinates to fetch local air quality metrics.
+                </p>
               )}
             </div>
           </div>

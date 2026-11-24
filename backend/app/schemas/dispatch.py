@@ -26,6 +26,7 @@ class AirQualityResponse(BaseModel):
     location: Optional[str]
     is_mock: bool = False
     disclaimer: str = "Air quality data is provided as contextual delivery-planning information only. It does not constitute proof that a delivery is safe or unsafe."
+    updated_at: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
 
 

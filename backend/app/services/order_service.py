@@ -61,8 +61,8 @@ async def create_order_from_extraction(
     # Match or create customer
     customer = None
     if phone:
-        cust_stmt = select(Customer).where(Customer.phone == phone)
-        customer = (await db.execute(cust_stmt)).scalar_one_or_none()
+        cust_stmt = select(Customer).where(Customer.phone == phone).order_by(Customer.created_at.asc())
+        customer = (await db.execute(cust_stmt)).scalars().first()
 
     if not customer:
         customer = Customer(

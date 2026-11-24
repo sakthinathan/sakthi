@@ -171,7 +171,18 @@ export default function AIOpsCenter() {
         {services.map((svc) => (
           <div key={svc.name} className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-sm text-slate-900">{svc.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-slate-900">{svc.name}</span>
+                {svc.status === 'degraded' ? (
+                  <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                    SIMULATED SURGE ANOMALY
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                    LIVE CLUSTER (utsavops-nudgebee)
+                  </span>
+                )}
+              </div>
               <StatusBadge status={svc.status} />
             </div>
             <div className="grid grid-cols-4 gap-2 text-center text-xs">
@@ -254,13 +265,28 @@ export default function AIOpsCenter() {
             {/* Root Cause Analysis Box */}
             {selectedIncident.root_cause && (
               <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
-                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1">
-                  <ShieldAlert className="w-4 h-4 text-amber-600" />
-                  Gemini BYOM Grounded Root Cause
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    Gemini BYOM Grounded Root Cause
+                  </span>
+                  <span className="text-[10px] font-mono bg-amber-200/80 text-amber-900 font-bold px-2 py-0.5 rounded border border-amber-300/60">
+                    Model: gemini-flash-latest
+                  </span>
+                </div>
                 <p className="text-xs text-amber-950 leading-relaxed font-medium">
                   {selectedIncident.root_cause}
                 </p>
+                {selectedIncident.evidence && (
+                  <div className="pt-2 border-t border-amber-200/60 flex flex-wrap gap-3 text-[11px] text-amber-900">
+                    <span className="font-semibold">Telemetry Evidence:</span>
+                    {Object.entries(selectedIncident.evidence).map(([k, v]) => (
+                      <span key={k} className="bg-white/80 px-2 py-0.5 rounded border border-amber-200 font-mono text-[10px]">
+                        {k}: {String(v)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

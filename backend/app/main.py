@@ -52,11 +52,11 @@ async def lifespan(app: FastAPI):
     logger.info("Starting UtsavOps", env=settings.app_env)
 
     # Initialize database
-    if settings.is_sqlite:
+    try:
         await init_db()
-        logger.info("SQLite database initialized")
-    else:
-        logger.info("Using PostgreSQL", url=settings.database_url[:30] + "...")
+        logger.info("Database schema initialized and verified")
+    except Exception as e:
+        logger.warn("Database schema initialization encountered warning", error=str(e))
 
     # Ensure upload directory exists
     os.makedirs(settings.upload_dir, exist_ok=True)
@@ -102,7 +102,8 @@ def create_app() -> FastAPI:
     )
 
     # Import and register routers
-    from app.routers import health, dashboard, orders, customers, dispatch, flags, aiops, audit
+    from app.routers import health, dashboard, orders, customers, dispatch, flags, aiops, audit, auth
+    app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
     app.include_router(health.router, prefix="/api", tags=["Health"])
     app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
     app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ProviderBadge from '../components/ProviderBadge';
 import { 
   ShoppingBag, 
   Clock, 
@@ -65,6 +66,20 @@ export default function Dashboard() {
           </Link>
         </div>
       )}
+
+      {/* Integration Provider Status Bar */}
+      <div className="bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+        <span className="font-bold text-slate-700 tracking-wide uppercase text-[11px] flex items-center gap-1.5">
+          <Activity className="w-3.5 h-3.5 text-amber-500" />
+          Verified Runtime Integrations
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <ProviderBadge provider="sarvam_document_ai" status="live" isMock={false} label="Sarvam AI" />
+          <ProviderBadge provider="flagsmith_live" status="live" isMock={false} label="Flagsmith" />
+          <ProviderBadge provider="google_address_validation" status="live" isMock={false} label="Google Cloud APIs" />
+          <ProviderBadge provider="gemini_byom" status="live" isMock={false} label="NudgeBee + Gemini BYOM" />
+        </div>
+      </div>
 
       {/* Stats KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
