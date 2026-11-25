@@ -3,8 +3,8 @@
 **Date:** November 25, 2026  
 **Repository:** `https://github.com/sakthinathan/sakthi`  
 **Base Branch:** `main`  
-**Feature Branch:** `feature/flagsmith-secret-remediation-live-verification`  
-**Status:** SECRET REMEDIATION COMPLETE • 55/55 TESTS PASSING • 15/15 E2E ACCEPTANCE STEPS VERIFIED • DEMO-DAY READY
+**Feature Branch:** `fix/flagsmith-api-key-auth-demo-verification`  
+**Status:** AUTH HEADER HARDENED • 70/70 TESTS PASSING • 15/15 E2E HERMETIC STEPS VERIFIED • FRONTEND BUILD CLEAN
 
 ---
 
@@ -58,9 +58,9 @@ This targeted engineering sprint resolved all remaining P0 authentication, secre
 ## 2. Test Suite & Verification Results
 
 ### Unit & Integration Test Suite (`make test`)
-Total Tests: **64 Tests** (including 24 Flagsmith/Google integration & isolation tests)  
-Pass Rate: **100% (64 passed, 0 failed, 0 skipped)**  
-Execution Duration: **1.00 seconds**  
+Total Tests: **70 Tests** (including 30 Flagsmith/Google integration, isolation, and auth-header regression tests)  
+Pass Rate: **100% (70 passed, 0 failed, 0 skipped)**  
+Execution Duration: **1.06 seconds**  
 
 ```
 tests/test_aiops.py::test_aiops_incident_workflow PASSED                 [  1%]
@@ -120,8 +120,12 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_failed_job PASSED        [ 98%]
 tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 ```
 
-### Frontend Production Build (`make build`)
-- Vite v6.4.6 production build completed in **1.13s** with **0 warnings / 0 errors**.
+### Frontend Production Build (`npm ci && npm run build`)
+- Clean install (`npm ci`) and Vite v6.4.6 production build completed in **1.20s** with **0 warnings / 0 errors**.
+
+### CI & Secret Scanning Evidence
+- GitHub Actions workflow (`.github/workflows/ci.yml`) runs Gitleaks (`8.21.2`) with `--redact` against all tracked files and commit/PR diffs, followed by `backend-test` and `frontend-build`.
+- Local tracked-file regex secret scan passed with **0 matches**; local `gitleaks` and `gh` CLIs are not installed in this environment, so live CI workflow status must be verified on the GitHub PR checks page.
 
 ### 15-Step End-to-End Acceptance Test (`scripts/e2e_acceptance_test.py`)
 - Verified all 15 demo steps from login through chit extraction, address validation, VIP surge rules, AIOps degradation, RCA, mitigation, recovery, audit log, and logout token revocation.

@@ -764,3 +764,121 @@ async def test_flagsmith_edge_propagation_delay_recovery_and_retry_after_publish
         assert fs.local_overrides.get("surge_survival_mode") is True
 
 
+# --- PR #8: FLAGSMITH MANAGEMENT API AUTH HEADER REGRESSION TESTS ---
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "configured_key,expected_header",
+    [
+        ("mock_dotless_admin_token_xyz123", "Api-Key mock_dotless_admin_token_xyz123"),
+        ("mock_prefix.mock_dotted_secret_xyz123", "Api-Key mock_prefix.mock_dotted_secret_xyz123"),
+        ("Api-Key mock_already_prefixed_token", "Api-Key mock_already_prefixed_token"),
+        ("api-key   mock_lowercase_prefixed_token", "Api-Key mock_lowercase_prefixed_token"),
+    ],
+)
+async def test_flagsmith_auth_header_always_uses_single_api_key_prefix(configured_key, expected_header):
+    """PR #8: Management API Authorization header always uses `Api-Key <token>` without `Token` fallback or duplicate prefix."""
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+
+    captured_auth_headers = []
+    captured_edge_headers = []
+
+    async def capture_get(url, **kwargs):
+        headers = kwargs.get("headers") or {}
+        if str(url).startswith("https://api.flagsmith.com/"):
+            captured_auth_headers.append(headers.get("Authorization"))
+        elif str(url).startswith("https://edge.api.flagsmith.com/"):
+            captured_edge_headers.append(headers)
+        if "/versions/" in str(url) and "/featurestates/" not in str(url):
+            m = MagicMock(status_code=200)
+            m.json.return_value = {"results": [{"uuid": "draft-auth-check", "published": False}]}
+            return m
+        elif "/featurestates/" in str(url):
+            m = MagicMock(status_code=200)
+            m.json.return_value = [{"id": 5555, "feature": 299379, "enabled": False}]
+            return m
+        elif "/flags/" in str(url):
+            m = MagicMock(status_code=200)
+            m.json.return_value = [{"feature": {"id": 299379, "name": "surge_survival_mode"}, "enabled": True}]
+            return m
+        return MagicMock(status_code=404)
+
+    async def capture_patch(url, **kwargs):
+        captured_auth_headers.append((kwargs.get("headers") or {}).get("Authorization"))
+        return MagicMock(status_code=200)
+
+    async def capture_post(url, **kwargs):
+        captured_auth_headers.append((kwargs.get("headers") or {}).get("Authorization"))
+        return MagicMock(status_code=200)
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=configured_key)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value=DUMMY_SDK_KEY)), \
+         patch("httpx.AsyncClient.get", side_effect=capture_get), \
+         patch("httpx.AsyncClient.patch", side_effect=capture_patch), \
+         patch("httpx.AsyncClient.post", side_effect=capture_post):
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+        assert res["status"] == "LIVE"
+        assert len(captured_auth_headers) == 4  # versions GET, featurestates GET, PATCH, publish POST
+        assert all(h == expected_header for h in captured_auth_headers)
+        assert all(not h.startswith("Token ") for h in captured_auth_headers)
+        assert all("Api-Key Api-Key" not in h for h in captured_auth_headers)
+        assert len(captured_edge_headers) == 1
+        assert captured_edge_headers[0].get("X-Environment-Key") == DUMMY_SDK_KEY
+        assert "Authorization" not in captured_edge_headers[0]
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_raw_token_never_leaks_to_logs_or_errors(caplog):
+    """PR #8: Raw admin token must never appear in response bodies, error messages, or log output."""
+    fs = FlagsmithService()
+    secret_sentinel = "super_sensitive_mock_admin_secret_98765"
+    mock_403 = MagicMock(status_code=403)
+
+    logged_events = []
+
+    def spy_log(*args, **kwargs):
+        logged_events.append((args, kwargs))
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=secret_sentinel)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", return_value=mock_403), \
+         patch("app.services.flagsmith_service.logger.error", side_effect=spy_log), \
+         patch("app.services.flagsmith_service.logger.info", side_effect=spy_log), \
+         patch("app.services.flagsmith_service.logger.warn", side_effect=spy_log):
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res["success"] is False
+        assert res["status"] == "UNAVAILABLE"
+        assert secret_sentinel not in str(res)
+        assert secret_sentinel not in res.get("error", "")
+        assert secret_sentinel not in str(logged_events)
+        assert secret_sentinel not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_missing_or_invalid_credentials_never_report_remote_success():
+    """PR #8: Missing or invalid credentials never report remote success (`LIVE`)."""
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+
+    # Missing credential -> LOCAL_OVERRIDE (not LIVE)
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=None)):
+        res_missing = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res_missing["status"] == "LOCAL_OVERRIDE"
+        assert res_missing["source"] != "flagsmith_remote_admin"
+
+    # Invalid credential (401) -> UNAVAILABLE, success=False
+    fs.local_overrides.clear()
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="bad_dotless_token")), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", return_value=MagicMock(status_code=401)):
+        res_invalid = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res_invalid["success"] is False
+        assert res_invalid["status"] == "UNAVAILABLE"
+        assert fs.local_overrides.get("surge_survival_mode") is not True
+
+
+

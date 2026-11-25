@@ -202,6 +202,23 @@ class FlagsmithService:
         return self._update_locks[key]
 
     @staticmethod
+    def _format_management_auth_header(admin_key: str) -> str:
+        """
+        Format the official Flagsmith Management API Authorization header:
+        `Api-Key <token>`, without duplicating an existing `Api-Key` prefix
+        and without falling back to `Token`.
+        """
+        cleaned = admin_key.strip()
+        if cleaned.lower().startswith("api-key "):
+            token = cleaned[8:].strip()
+            return f"Api-Key {token}"
+        if cleaned.lower().startswith("api-key"):
+            remainder = cleaned[7:].strip()
+            if remainder:
+                return f"Api-Key {remainder}"
+        return f"Api-Key {cleaned}"
+
+    @staticmethod
     def _select_environment_feature_state(
         fs_data: Any,
         target_feature_id: str,
@@ -335,8 +352,8 @@ class FlagsmithService:
 
         clean_env_id = str(env_id).strip()
 
-        # Build auth header - never expose secret key in logs or messages
-        auth_val = f"Api-Key {admin_key}" if ("." in admin_key or admin_key.startswith("Api-Key")) else f"Token {admin_key}"
+        # Build auth header - always use official Flagsmith Api-Key format; never expose secret key
+        auth_val = self._format_management_auth_header(admin_key)
         headers = {
             "Authorization": auth_val,
             "Content-Type": "application/json"

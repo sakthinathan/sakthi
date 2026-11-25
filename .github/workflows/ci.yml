@@ -2,7 +2,7 @@ name: UtsavOps CI
 
 on:
   push:
-    branches: [ main, "feature/*", "feature/**" ]
+    branches: [ main, "feature/*", "feature/**", "fix/*", "fix/**" ]
   pull_request:
     branches: [ main ]
 
