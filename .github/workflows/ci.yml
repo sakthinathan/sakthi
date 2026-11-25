@@ -84,7 +84,7 @@ jobs:
           INITIAL_ADMIN_PASSWORD: ci-test-fixture-admin-password-2026!
         run: |
           cd backend
-          pytest tests/ -v
+          PYTHONPATH=. python -m pytest tests/ -v
 
   frontend-build:
     name: Frontend Build
