@@ -11,14 +11,14 @@ asyncpg==0.30.0
 alembic==1.14.1
 
 # HTTP Client
-httpx==0.28.1
+httpx>=0.27.0,<0.29.0
 aiofiles==24.1.0
 
 # Sarvam AI SDK
 sarvamai>=0.1.0
 
 # Flagsmith
-flagsmith==3.7.1
+flagsmith>=3.7.0
 
 # Security
 python-multipart==0.0.20
@@ -31,4 +31,3 @@ tenacity==9.0.0
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0
-httpx==0.28.1

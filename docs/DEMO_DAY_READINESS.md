@@ -2,9 +2,9 @@
 
 **Date:** November 25, 2026  
 **Repository:** `https://github.com/sakthinathan/sakthi`  
-**Base Branch:** `main`  
-**Feature Branch:** `fix/flagsmith-api-key-auth-demo-verification`  
-**Status:** AUTH HEADER HARDENED • 70/70 TESTS PASSING • 15/15 E2E HERMETIC STEPS VERIFIED • FRONTEND BUILD CLEAN
+**Base Branch:** `main` (`22eac365f95887be833929645ea848abc445076a`)  
+**Verification Branch:** `chore/final-main-demo-verification`  
+**Status:** VERIFICATION IN PROGRESS (70/70 MOCKED BACKEND TESTS • HERMETIC E2E 15/15 • FRONTEND BUILD CLEAN • OUTSTANDING MANUAL CREDENTIAL ROTATION & LIVE CI CHECK)
 
 ---
 
@@ -57,10 +57,10 @@ This targeted engineering sprint resolved all remaining P0 authentication, secre
 
 ## 2. Test Suite & Verification Results
 
-### Unit & Integration Test Suite (`make test`)
-Total Tests: **70 Tests** (including 30 Flagsmith/Google integration, isolation, and auth-header regression tests)  
-Pass Rate: **100% (70 passed, 0 failed, 0 skipped)**  
-Execution Duration: **1.06 seconds**  
+### Unit & Integration Test Suite (`PYTHONPATH=backend python3 -m pytest backend/tests -q`)
+Total Tests: **70 Tests** (including 30 Flagsmith/Google integration, isolation, and PR #8 `Api-Key` auth-header regression tests)  
+Pass Rate: **100% (70 passed, 0 failed, 0 skipped; 2 FastAPI `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warnings)**  
+Execution Duration: **1.01 seconds**  
 
 ```
 tests/test_aiops.py::test_aiops_incident_workflow PASSED                 [  1%]
@@ -120,15 +120,22 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_failed_job PASSED        [ 98%]
 tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 ```
 
-### Frontend Production Build (`npm ci && npm run build`)
-- Clean install (`npm ci`) and Vite v6.4.6 production build completed in **1.20s** with **0 warnings / 0 errors**.
+### Frontend Production Build (`cd frontend && npm ci && npm run build`)
+- Clean install (`npm ci`, added 84 packages in 2s) and Vite v6.4.6 production build (2170 modules) completed in **1.28s** with **0 warnings / 0 errors**.
 
 ### CI & Secret Scanning Evidence
-- GitHub Actions workflow (`.github/workflows/ci.yml`) runs Gitleaks (`8.21.2`) with `--redact` against all tracked files and commit/PR diffs, followed by `backend-test` and `frontend-build`.
-- Local tracked-file regex secret scan passed with **0 matches**; local `gitleaks` and `gh` CLIs are not installed in this environment, so live CI workflow status must be verified on the GitHub PR checks page.
+- **Main Commit `22eac365f95887be833929645ea848abc445076a` CI Run ([45577219338](https://github.com/sakthinathan/sakthi/actions/runs/45577219338))**:
+  - `Frontend Build`: **success** ([job](https://github.com/sakthinathan/sakthi/actions/runs/45577219338/job/139078020364))
+  - `Secret & Credential Scan (Gitleaks)`: **failure** ([job](https://github.com/sakthinathan/sakthi/actions/runs/45577219338/job/139078019938)) — flagged two synthetic test strings (`idemp-key-12345` in `test_order_intake_dedup.py`, `short-secret-12345` in `test_auth_security.py`).
+  - `Backend Tests & Lint`: **failure** ([job](https://github.com/sakthinathan/sakthi/actions/runs/45577219338/job/139078020207)) — `pip install` failed because `flagsmith==3.7.1` does not exist on PyPI and `httpx==0.28.1` conflicted.
+- **Remediation in `chore/final-main-demo-verification`:**
+  - Updated `backend/requirements.txt` (`flagsmith>=3.7.0`, `httpx>=0.27.0,<0.29.0`, removed duplicate `httpx` line) — `pip install --dry-run` resolved cleanly.
+  - Added `idemp-key-12345` and `short-secret-12345` to `.gitleaks.toml` allowlist; local `gitleaks detect --no-git --redact` on tracked files passed with **0 leaks found** in `47.7ms`.
+  - **Gitleaks Scope:** Scans all tracked working-tree files (`--no-git`) and commit/PR diff ranges (`--log-opts=...`), **not** full pre-PR #6 Git history.
+  - **PR #9 CI Status:** Pending push/execution on GitHub Actions (not yet verified green on CI).
 
-### 15-Step End-to-End Acceptance Test (`scripts/e2e_acceptance_test.py`)
-- Verified all 15 demo steps from login through chit extraction, address validation, VIP surge rules, AIOps degradation, RCA, mitigation, recovery, audit log, and logout token revocation.
+### 15-Step End-to-End Acceptance Test (`python3 scripts/e2e_acceptance_test.py`)
+- **Hermetic / Mocked Execution:** Passed **15/15 steps** with external Flagsmith keys cleared (`FLAGSMITH_ADMIN_API_KEY`, `FLAGSMITH_ENV_KEY`, etc.) and local SQLite DB. Does **not** constitute live external sponsor verification.
 
 ---
 
@@ -195,10 +202,10 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
    - The Management API master token (`FLAGSMITH_ADMIN_API_KEY`) and explicit environment ID (`FLAGSMITH_ENVIRONMENT_ID`) are used to execute Flagsmith's Feature Versioning v2 workflow (`POST draft version` -> `PATCH featurestate` -> `POST publish` -> `GET Edge API confirm`).
    - Remote changes to `surge_survival_mode` (ID: 299379) reflect live in both dashboard queries and Edge evaluation.
    - If `FLAGSMITH_ENVIRONMENT_ID` is missing, the backend returns `UNAVAILABLE` and strictly refuses to guess or discover environments via `/projects/`.
-2. **Secret Remediation & Credential Hygiene**:
+2. **Secret Remediation & Credential Hygiene (Outstanding Manual Action)**:
    - All real credentials and admin tokens have been redacted from tracked files, documentation, and test fixtures.
-   - Automated secret scanning has been integrated into `.github/workflows/ci.yml`.
-   - **Git History Notice**: A previously committed Flagsmith admin token in historical commit `9c4c4bf` must be rotated on the Flagsmith dashboard immediately. A full history rewrite (e.g., using `git-filter-repo` or BFG) is documented and recommended post-hackathon to avoid disrupting current collaborator branches during demo day.
+   - Automated Gitleaks scanning (`8.21.2`, `--redact`) is configured in `.github/workflows/ci.yml` for tracked working-tree files and PR/commit diffs.
+   - **Outstanding Manual Action — Credential Rotation & History Cleanup:** Historical commit `9c4c4bf` on `main` still contains a previously exposed Flagsmith admin token. Operator confirmation of token rotation/revocation on the Flagsmith dashboard is **not yet confirmed** and must be completed prior to any live demo. Full Git history rewrite (`git-filter-repo` or BFG) remains recommended post-hackathon.
 3. **Kubernetes Cluster SSH Tunnel**:
    - Live querying of the k3s cluster on GCP VM `utsavops-nudgebee` requires an active SSH tunnel.
    - *Backup Plan*: When untunneled, the UI honestly displays `SIMULATED TELEMETRY` and demonstrates the complete, repeatable AIOps RCA and mitigation workflow.

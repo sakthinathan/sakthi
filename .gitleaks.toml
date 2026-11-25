@@ -14,6 +14,8 @@ regexes = [
   '''UtsavOps2026!Secure''',
   '''your-[a-z0-9-]+''',
   '''change-me-to-a-secure-random-[a-z0-9-]+''',
+  '''idemp-key-12345''',
+  '''short-secret-12345''',
 ]
 paths = [
   '''^\.env\.example$''',
