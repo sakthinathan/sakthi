@@ -3,9 +3,8 @@
 **Date:** November 25, 2026  
 **Repository:** `https://github.com/sakthinathan/sakthi`  
 **Base Branch:** `main`  
-**Feature Branch:** `feature/demo-day-critical-fixes`  
-**Latest Reviewed Main Commit:** `da1da18d0d15fb1f4a7afeda939b368d96087888`  
-**Status:** ALL FIXES IMPLEMENTED • 48/48 TESTS PASSING • 15/15 E2E ACCEPTANCE STEPS VERIFIED • DEMO-DAY READY
+**Feature Branch:** `feature/flagsmith-secret-remediation-live-verification`  
+**Status:** SECRET REMEDIATION COMPLETE • 55/55 TESTS PASSING • 15/15 E2E ACCEPTANCE STEPS VERIFIED • DEMO-DAY READY
 
 ---
 
@@ -59,58 +58,65 @@ This targeted engineering sprint resolved all remaining P0 authentication, secre
 ## 2. Test Suite & Verification Results
 
 ### Unit & Integration Test Suite (`make test`)
-Total Tests: **48 Tests**  
-Pass Rate: **100% (48 passed, 0 failed, 0 skipped)**  
-Execution Duration: **0.90 seconds**  
+Total Tests: **55 Tests**  
+Pass Rate: **100% (55 passed, 0 failed, 0 skipped)**  
+Execution Duration: **0.91 seconds**  
 
 ```
-tests/test_aiops.py::test_aiops_incident_workflow PASSED                 [  2%]
-tests/test_auth.py::test_auth_login_success PASSED                       [  4%]
-tests/test_auth.py::test_auth_login_invalid_credentials PASSED           [  6%]
-tests/test_auth.py::test_auth_me_with_valid_token PASSED                 [  8%]
-tests/test_auth.py::test_auth_me_without_token PASSED                    [ 10%]
-tests/test_auth.py::test_auth_logout PASSED                              [ 12%]
-tests/test_auth_security.py::test_auth_security_missing_or_weak_signing_secret PASSED [ 14%]
-tests/test_auth_security.py::test_auth_security_login_does_not_autoseed PASSED [ 16%]
-tests/test_auth_security.py::test_auth_security_tampered_token PASSED    [ 18%]
-tests/test_auth_security.py::test_auth_security_expired_token PASSED     [ 20%]
-tests/test_auth_security.py::test_auth_security_revoked_token_after_logout PASSED [ 22%]
-tests/test_auth_security.py::test_auth_security_logout_persistence_failure PASSED [ 25%]
-tests/test_auth_security.py::test_auth_security_inactive_operator_rejected PASSED [ 27%]
-tests/test_auth_security.py::test_auth_security_rate_limiting PASSED     [ 29%]
-tests/test_auth_security.py::test_auth_security_role_based_access_control PASSED [ 31%]
-tests/test_config_and_integrations.py::test_configuration_loading PASSED [ 33%]
-tests/test_config_and_integrations.py::test_production_missing_variables_validation PASSED [ 35%]
-tests/test_config_and_integrations.py::test_google_api_service_initialization PASSED [ 37%]
-tests/test_config_and_integrations.py::test_google_address_validation_mock_fallback PASSED [ 39%]
-tests/test_config_and_integrations.py::test_gemini_service_initialization PASSED [ 41%]
-tests/test_config_and_integrations.py::test_gemini_byom_fallback_rca PASSED [ 43%]
-tests/test_config_and_integrations.py::test_sarvam_service_initialization PASSED [ 45%]
-tests/test_config_and_integrations.py::test_flagsmith_service_initialization PASSED [ 47%]
-tests/test_config_and_integrations.py::test_nudgebee_configuration_validation PASSED [ 50%]
-tests/test_config_and_integrations.py::test_database_health_probe PASSED [ 52%]
-tests/test_customers.py::test_customer_lifecycle PASSED                  [ 54%]
-tests/test_flagsmith_and_google.py::test_google_maps_dual_key_precedence PASSED [ 56%]
-tests/test_flagsmith_and_google.py::test_google_apis_live_metadata PASSED [ 58%]
-tests/test_flagsmith_and_google.py::test_google_air_quality_disclaimer_preserved PASSED [ 60%]
-tests/test_flagsmith_and_google.py::test_flagsmith_vip_express_delivery_during_surge PASSED [ 62%]
-tests/test_flagsmith_and_google.py::test_flagsmith_management_api_patch_success PASSED [ 64%]
-tests/test_flagsmith_and_google.py::test_flagsmith_management_api_unauthorized_401 PASSED [ 66%]
-tests/test_flagsmith_and_google.py::test_flagsmith_management_api_missing_key_fallback PASSED [ 68%]
-tests/test_flagsmith_and_google.py::test_flagsmith_base_express_disabled_blocks_all PASSED [ 70%]
-tests/test_flagsmith_and_google.py::test_flagsmith_management_api_read_after_write_mismatch PASSED [ 72%]
-tests/test_flagsmith_and_google.py::test_flagsmith_management_api_missing_feature_id PASSED [ 75%]
-tests/test_flagsmith_and_google.py::test_flagsmith_management_api_403_404_and_network_error PASSED [ 77%]
-tests/test_flagsmith_and_google.py::test_flagsmith_surge_mode_remote_targets_correct_surge_feature PASSED [ 79%]
-tests/test_health.py::test_health_check PASSED                           [ 81%]
-tests/test_health.py::test_readiness_check PASSED                        [ 83%]
-tests/test_health.py::test_dashboard_stats PASSED                        [ 85%]
-tests/test_order_intake_dedup.py::test_order_intake_duplicate_customer_prevention PASSED [ 87%]
-tests/test_order_intake_dedup.py::test_order_intake_idempotency PASSED   [ 89%]
-tests/test_orders.py::test_order_intake_and_approval PASSED              [ 91%]
-tests/test_sarvam_doc_ai.py::test_sarvam_unconfigured_fallback PASSED    [ 93%]
-tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_successful_job_workflow PASSED [ 95%]
-tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_failed_job PASSED        [ 97%]
+tests/test_aiops.py::test_aiops_incident_workflow PASSED                 [  1%]
+tests/test_auth.py::test_auth_login_success PASSED                       [  3%]
+tests/test_auth.py::test_auth_login_invalid_credentials PASSED           [  5%]
+tests/test_auth.py::test_auth_me_with_valid_token PASSED                 [  7%]
+tests/test_auth.py::test_auth_me_without_token PASSED                    [  9%]
+tests/test_auth.py::test_auth_logout PASSED                              [ 10%]
+tests/test_auth_security.py::test_auth_security_missing_or_weak_signing_secret PASSED [ 12%]
+tests/test_auth_security.py::test_auth_security_login_does_not_autoseed PASSED [ 14%]
+tests/test_auth_security.py::test_auth_security_tampered_token PASSED    [ 16%]
+tests/test_auth_security.py::test_auth_security_expired_token PASSED     [ 18%]
+tests/test_auth_security.py::test_auth_security_revoked_token_after_logout PASSED [ 20%]
+tests/test_auth_security.py::test_auth_security_logout_persistence_failure PASSED [ 21%]
+tests/test_auth_security.py::test_auth_security_inactive_operator_rejected PASSED [ 23%]
+tests/test_auth_security.py::test_auth_security_rate_limiting PASSED     [ 25%]
+tests/test_auth_security.py::test_auth_security_role_based_access_control PASSED [ 27%]
+tests/test_config_and_integrations.py::test_configuration_loading PASSED [ 29%]
+tests/test_config_and_integrations.py::test_production_missing_variables_validation PASSED [ 30%]
+tests/test_config_and_integrations.py::test_google_api_service_initialization PASSED [ 32%]
+tests/test_config_and_integrations.py::test_google_address_validation_mock_fallback PASSED [ 34%]
+tests/test_config_and_integrations.py::test_gemini_service_initialization PASSED [ 36%]
+tests/test_config_and_integrations.py::test_gemini_byom_fallback_rca PASSED [ 38%]
+tests/test_config_and_integrations.py::test_sarvam_service_initialization PASSED [ 40%]
+tests/test_config_and_integrations.py::test_flagsmith_service_initialization PASSED [ 41%]
+tests/test_config_and_integrations.py::test_nudgebee_configuration_validation PASSED [ 43%]
+tests/test_config_and_integrations.py::test_database_health_probe PASSED [ 45%]
+tests/test_customers.py::test_customer_lifecycle PASSED                  [ 47%]
+tests/test_flagsmith_and_google.py::test_google_maps_dual_key_precedence PASSED [ 49%]
+tests/test_flagsmith_and_google.py::test_google_apis_live_metadata PASSED [ 50%]
+tests/test_flagsmith_and_google.py::test_google_air_quality_disclaimer_preserved PASSED [ 52%]
+tests/test_flagsmith_and_google.py::test_flagsmith_missing_admin_key_fallback_local_override PASSED [ 54%]
+tests/test_flagsmith_and_google.py::test_flagsmith_missing_environment_id_returns_unavailable PASSED [ 56%]
+tests/test_flagsmith_and_google.py::test_flagsmith_invalid_environment_id_404 PASSED [ 58%]
+tests/test_flagsmith_and_google.py::test_flagsmith_unauthorized_and_forbidden_401_403 PASSED [ 60%]
+tests/test_flagsmith_and_google.py::test_flagsmith_feature_id_not_found PASSED [ 61%]
+tests/test_flagsmith_and_google.py::test_flagsmith_draft_creation_failure_500 PASSED [ 63%]
+tests/test_flagsmith_and_google.py::test_flagsmith_draft_featurestate_lookup_failure_502 PASSED [ 65%]
+tests/test_flagsmith_and_google.py::test_flagsmith_draft_patch_failure_400 PASSED [ 67%]
+tests/test_flagsmith_and_google.py::test_flagsmith_publish_failure_500 PASSED [ 69%]
+tests/test_flagsmith_and_google.py::test_flagsmith_publish_succeeds_edge_confirm_fails PASSED [ 70%]
+tests/test_flagsmith_and_google.py::test_flagsmith_edge_returns_mismatched_value PASSED [ 72%]
+tests/test_flagsmith_and_google.py::test_flagsmith_v2_publish_and_edge_confirm_success PASSED [ 74%]
+tests/test_flagsmith_and_google.py::test_flagsmith_never_calls_projects_endpoint PASSED [ 76%]
+tests/test_flagsmith_and_google.py::test_flagsmith_surge_mode_remote_targets_correct_surge_feature PASSED [ 78%]
+tests/test_flagsmith_and_google.py::test_flagsmith_vip_express_delivery_during_surge PASSED [ 80%]
+tests/test_flagsmith_and_google.py::test_flagsmith_base_express_disabled_blocks_all PASSED [ 81%]
+tests/test_health.py::test_health_check PASSED                           [ 83%]
+tests/test_health.py::test_readiness_check PASSED                        [ 85%]
+tests/test_health.py::test_dashboard_stats PASSED                        [ 87%]
+tests/test_order_intake_dedup.py::test_order_intake_duplicate_customer_prevention PASSED [ 89%]
+tests/test_order_intake_dedup.py::test_order_intake_idempotency PASSED   [ 90%]
+tests/test_orders.py::test_order_intake_and_approval PASSED              [ 92%]
+tests/test_sarvam_doc_ai.py::test_sarvam_unconfigured_fallback PASSED    [ 94%]
+tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_successful_job_workflow PASSED [ 96%]
+tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_failed_job PASSED        [ 98%]
 tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 ```
 
@@ -146,7 +152,7 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 
 1. **Login**:
    - Access `http://localhost:5173/login`.
-   - Enter credentials: `admin@utsavops.internal` / `UtsavOps2026!Secure`.
+   - Enter credentials: `admin@utsavops.internal` / `[Configured via INITIAL_ADMIN_PASSWORD]`.
    - Highlight session management and rate limiting (5 attempts / 5 min).
 2. **Intake Handwritten Chit**:
    - Go to `/intake`.
@@ -181,9 +187,14 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 ## 5. Operational Notes & Infrastructure
 
 1. **Remote Flagsmith Management API Integration**:
-   - The Flagsmith client key connects to the Edge API and evaluates flags live.
-   - The Management API master token (`8coM1k1z.ySIiAaSzaC6ABI4bjnrOutg4gucDybWQ`) is fully authenticated and uses Flagsmith's Feature Versioning v2 workflow (`POST draft version` -> `PATCH featurestate` -> `POST publish` -> `GET Edge API confirm`).
+   - The Flagsmith client key (`FLAGSMITH_ENV_KEY`) connects to the Edge API and evaluates flags live.
+   - The Management API master token (`FLAGSMITH_ADMIN_API_KEY`) and explicit environment ID (`FLAGSMITH_ENVIRONMENT_ID`) are used to execute Flagsmith's Feature Versioning v2 workflow (`POST draft version` -> `PATCH featurestate` -> `POST publish` -> `GET Edge API confirm`).
    - Remote changes to `surge_survival_mode` (ID: 299379) reflect live in both dashboard queries and Edge evaluation.
-2. **Kubernetes Cluster SSH Tunnel**:
+   - If `FLAGSMITH_ENVIRONMENT_ID` is missing, the backend returns `UNAVAILABLE` and strictly refuses to guess or discover environments via `/projects/`.
+2. **Secret Remediation & Credential Hygiene**:
+   - All real credentials and admin tokens have been redacted from tracked files, documentation, and test fixtures.
+   - Automated secret scanning has been integrated into `.github/workflows/ci.yml`.
+   - **Git History Notice**: A previously committed Flagsmith admin token in historical commit `9c4c4bf` must be rotated on the Flagsmith dashboard immediately. A full history rewrite (e.g., using `git-filter-repo` or BFG) is documented and recommended post-hackathon to avoid disrupting current collaborator branches during demo day.
+3. **Kubernetes Cluster SSH Tunnel**:
    - Live querying of the k3s cluster on GCP VM `utsavops-nudgebee` requires an active SSH tunnel.
    - *Backup Plan*: When untunneled, the UI honestly displays `SIMULATED TELEMETRY` and demonstrates the complete, repeatable AIOps RCA and mitigation workflow.

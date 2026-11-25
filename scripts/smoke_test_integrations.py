@@ -128,7 +128,7 @@ async def test_flagsmith(settings):
 
     # Management API
     if not settings.has_flagsmith_admin:
-        results["Flagsmith Management API"] = ("NOT CONFIGURED", "Admin key absent; local override mode active")
+        results["Flagsmith Management API"] = ("NOT CONFIGURED", "Admin key or environment ID absent; local override mode active")
     else:
         try:
             test_res = await flagsmith_service.update_feature_state_remote(
@@ -137,9 +137,11 @@ async def test_flagsmith(settings):
                 feature_id=settings.flagsmith_surge_mode_feature_id
             )
             if test_res.get("status") == "LIVE":
-                results["Flagsmith Management API"] = ("LIVE", "Remote PATCH & read-after-write confirmed")
+                results["Flagsmith Management API"] = ("LIVE", "v2 versioning published & confirmed via Edge API")
+            elif test_res.get("status") == "REMOTE_MISMATCH":
+                results["Flagsmith Management API"] = ("UNAVAILABLE", f"Edge confirmation mismatch: {test_res.get('error')}")
             elif test_res.get("status") == "UNAVAILABLE":
-                results["Flagsmith Management API"] = ("UNAVAILABLE", f"HTTP {test_res.get('status_code', 'error')}: Key lacks write permissions")
+                results["Flagsmith Management API"] = ("UNAVAILABLE", f"Error: {test_res.get('error', 'Operation failed')}")
             else:
                 results["Flagsmith Management API"] = ("FALLBACK", f"Status: {test_res.get('status', 'local_override')}")
         except Exception as e:

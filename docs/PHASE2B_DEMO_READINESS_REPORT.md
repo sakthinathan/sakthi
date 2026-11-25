@@ -13,7 +13,7 @@
 Phase 2B hardens **UtsavOps** into a production-grade, judge-ready autonomous operations platform for India's festive commerce. All requirements for Phase 2B have been implemented, tested, and validated against the live Cloud SQL PostgreSQL database (`35.234.219.215:5432`) and k3s Kubernetes cluster (`utsavops-nudgebee`).
 
 ### Key Highlights
-- **Operator Authentication Console:** Professional operator login experience at `/login`, complete with festive dark navy/orange theme, password toggle, secure PBKDF2 hashing, signed session tokens, protected routing (`ProtectedRoute`), and one-click demo credentials for judges (`admin@utsavops.internal` / `UtsavOps2026!Secure`).
+- **Operator Authentication Console:** Professional operator login experience at `/login`, complete with festive dark navy/orange theme, password toggle, secure PBKDF2 hashing, signed session tokens, protected routing (`ProtectedRoute`), and one-click demo credentials for judges (`admin@utsavops.internal` / `[Configured via INITIAL_ADMIN_PASSWORD]`).
 - **Order Intake Deduplication & Cloud SQL Fix:** Eliminated the `"Intake failed: Multiple rows were found when one or none was required"` error by safely deduplicating existing customer records in Cloud SQL, adding unique constraint on `customers(phone)`, and making order intake fully idempotent.
 - **Google Address Validation & Air Quality Telemetry:** Fixed stale AQI rendering on the Dispatch screen by adding an interactive "Refresh AQI" action with spinner loading state, timestamping (`updated_at`), persistence to `DispatchDetail`, and mandatory delivery-planning disclaimer retention.
 - **Flagsmith Surge Survival Semantics & Management API:** Preserved clear distinction between circuit breaker `surge_survival_mode`, feature flag `express_delivery_enabled`, and `vip_festive_buyers` segment. Confirmed real Management API PATCH capability with read-after-write confirmation and audit logging of source (`flagsmith_remote_admin` vs `local_override`).
@@ -66,7 +66,7 @@ Because `Customer.phone` lacked a unique database index and unique model constra
 - **Session Tokens:** URL-safe HMAC-SHA256 signed bearer tokens with 24-hour expiration.
 - **Seeded Demo Operator:**
   - **Email:** `admin@utsavops.internal`
-  - **Password:** `UtsavOps2026!Secure`
+  - **Password:** `[Configured via INITIAL_ADMIN_PASSWORD]`
   - **Name:** `UtsavOps Lead SRE`
   - **Role:** `admin`
 
@@ -164,7 +164,7 @@ Judges and evaluators can follow this step-by-step walkthrough to evaluate Utsav
 ### Step 1: Operator Authentication
 1. Open [http://localhost:5173/login](http://localhost:5173/login) in your browser.
 2. Observe the festive dark navy console with UtsavOps SRE branding.
-3. Click **"Fill Demo"** button to auto-fill `admin@utsavops.internal` / `UtsavOps2026!Secure`.
+3. Click **"Fill Demo"** button to auto-fill `admin@utsavops.internal` and default password.
 4. Click **"Enter Operator Console"**.
 5. Observe redirect to the main Dashboard; note the operator badge in the header: `UtsavOps Lead SRE (ADMIN)`.
 
