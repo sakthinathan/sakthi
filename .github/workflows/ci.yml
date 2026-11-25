@@ -81,7 +81,7 @@ jobs:
           APP_ENV: testing
           DATABASE_URL: sqlite+aiosqlite:///./test_utsavops.db
           AUTH_SECRET_KEY: test-auth-secret-key-32-chars-minimum-required!
-          INITIAL_ADMIN_PASSWORD: ci-test-fixture-admin-password-2026!
+          INITIAL_ADMIN_PASSWORD: UtsavOps2026!Secure
         run: |
           cd backend
           PYTHONPATH=. python -m pytest tests/ -v

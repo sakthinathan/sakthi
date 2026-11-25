@@ -129,8 +129,8 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
   - `Secret & Credential Scan (Gitleaks)`: **failure** ([job](https://github.com/sakthinathan/sakthi/actions/runs/45577219338/job/139078019938)) — flagged two synthetic test strings (`idemp-key-12345` in `test_order_intake_dedup.py`, `short-secret-12345` in `test_auth_security.py`).
   - `Backend Tests & Lint`: **failure** ([job](https://github.com/sakthinathan/sakthi/actions/runs/45577219338/job/139078020207)) — `pip install` failed because `flagsmith==3.7.1` does not exist on PyPI and `httpx==0.28.1` conflicted.
 - **Remediation in `chore/final-main-demo-verification`:**
-  - Updated `backend/requirements.txt` (`flagsmith>=3.7.0`, `httpx>=0.27.0,<0.29.0`, removed duplicate `httpx` line) and `.github/workflows/ci.yml` (`PYTHONPATH=. python -m pytest tests/ -v`).
-  - Added `idemp-key-12345` and `short-secret-12345` to `.gitleaks.toml` allowlist; CI Run [45578222029](https://github.com/sakthinathan/sakthi/actions/runs/45578222029) confirmed `Secret & Credential Scan (Gitleaks)` **success** and `Frontend Build` **success**; `Backend Tests & Lint` failed on `ModuleNotFoundError` prior to the `PYTHONPATH=.` fix.
+  - Updated `backend/requirements.txt` (`flagsmith>=3.7.0`, `httpx>=0.27.0,<0.29.0`, removed duplicate `httpx` line) and `.github/workflows/ci.yml` (`PYTHONPATH=. python -m pytest tests/ -v`, aligned `INITIAL_ADMIN_PASSWORD` with `conftest.py` fixture `UtsavOps2026!Secure`).
+  - Added `idemp-key-12345` and `short-secret-12345` to `.gitleaks.toml` allowlist; CI Run [45579032615](https://github.com/sakthinathan/sakthi/actions/runs/45579032615) confirmed `Secret & Credential Scan (Gitleaks)` **success** and `Frontend Build` **success**; clean `env -i` CI simulation passed **70/70** locally (live CI run on the latest push is pending verification on GitHub Actions).
   - **Gitleaks Scope:** Scans all tracked working-tree files (`--no-git`) and commit/PR diff ranges (`--log-opts=...`), **not** full pre-PR #6 Git history.
 
 ### 15-Step End-to-End Acceptance Test (`python3 scripts/e2e_acceptance_test.py`)
