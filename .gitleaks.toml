@@ -1,0 +1,20 @@
+title = "UtsavOps Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+# Narrow, documented allowlist for intentional non-secret test fixtures and placeholders only.
+[allowlist]
+description = "Allowlist strictly for synthetic test fixtures and placeholder templates"
+regexes = [
+  '''test-auth-secret-key-[a-z0-9-]+!?''',
+  '''test_admin_prefix\.mock_secret_token_value_32chars!''',
+  '''ser\.mock_test_sdk_key_for_edge_evaluation''',
+  '''ci-test-fixture-admin-password-2026!''',
+  '''UtsavOps2026!Secure''',
+  '''your-[a-z0-9-]+''',
+  '''change-me-to-a-secure-random-[a-z0-9-]+''',
+]
+paths = [
+  '''^\.env\.example$''',
+]

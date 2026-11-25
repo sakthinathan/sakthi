@@ -58,9 +58,9 @@ This targeted engineering sprint resolved all remaining P0 authentication, secre
 ## 2. Test Suite & Verification Results
 
 ### Unit & Integration Test Suite (`make test`)
-Total Tests: **55 Tests**  
-Pass Rate: **100% (55 passed, 0 failed, 0 skipped)**  
-Execution Duration: **0.91 seconds**  
+Total Tests: **64 Tests** (including 24 Flagsmith/Google integration & isolation tests)  
+Pass Rate: **100% (64 passed, 0 failed, 0 skipped)**  
+Execution Duration: **1.00 seconds**  
 
 ```
 tests/test_aiops.py::test_aiops_incident_workflow PASSED                 [  1%]
@@ -128,22 +128,22 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 
 ---
 
-## 3. Live vs Simulated Integration Matrix
+## 3. Live vs Automated / Simulated Integration Matrix
 
-| Sponsor / Service | Capability | Runtime Status | Verification Evidence |
+> [!IMPORTANT]
+> Automated `pytest` and `scripts/e2e_acceptance_test.py` runs execute against mocked/hermetic test doubles and **do not** constitute live external verification. Live status below requires runtime credentials in `.env` and verification via `make smoke` against real external endpoints.
+
+| Sponsor / Service | Capability | Automated Test Status | Live Runtime Verification Requirement |
 | :--- | :--- | :--- | :--- |
-| **Sarvam AI** | Document AI | **LIVE** | Official `sarvamai` SDK initialized; async job extraction polling ready |
-| **Sarvam AI** | Saaras v4 STT | **LIVE** | Live multipart endpoint operational (`hi-IN`, `ta-IN`) |
-| **Sarvam AI** | Mayura v1 Translation | **LIVE** | Real-time translation verified ("காஜு கத்லி" -> "Kaju Katli") |
-| **Sarvam AI** | Bulbul v3 TTS | **LIVE** | Synthesized live audio stream (67,782 bytes audio payload) |
-| **Flagsmith** | Client SDK | **LIVE** | Connected to Edge API; flags loaded dynamically |
-| **Flagsmith** | VIP Segmentation | **LIVE** | Identity traits (`tier = VIP`) evaluated against `vip_festive_buyers` |
-| **Flagsmith** | Management API | **LIVE** | Remote PATCH via v2 versioning workflow & read-after-write confirmed |
-| **Google Cloud** | Address Validation | **LIVE** | Validated address with components and street-level granularity |
-| **Google Cloud** | Geocoding API | **LIVE** | Resolved pinpoint coordinates (12.9783692, 77.6408356) |
-| **Google Cloud** | Air Quality API | **LIVE** | Connected to Air Quality lookup; disclaimer strictly preserved |
-| **Gemini BYOM** | SRE RCA | **LIVE** | Generates grounded root cause analysis using `gemini-flash-latest` |
-| **Cloud SQL** | PostgreSQL DB | **LIVE / CONFIG** | Production points to `35.234.219.215:5432`; strictly fails if unreachable |
+| **Sarvam AI** | Document AI | **Mocked / Hermetic Pass** | Requires live `SARVAM_API_KEY`; verified in `make smoke` when key is active |
+| **Sarvam AI** | Saaras v4 STT | **Hermetic Fallback Pass** | Requires live `SARVAM_API_KEY` (`hi-IN`, `ta-IN`) |
+| **Sarvam AI** | Mayura v1 Translation | **Hermetic Fallback Pass** | Requires live `SARVAM_API_KEY` |
+| **Sarvam AI** | Bulbul v3 TTS | **Hermetic Fallback Pass** | Requires live `SARVAM_API_KEY` |
+| **Flagsmith** | Client SDK & VIP Segmentation | **Mocked / Hermetic Pass** | Requires `FLAGSMITH_ENV_KEY`; evaluates `vip_festive_buyers` against Edge API |
+| **Flagsmith** | Management API v2 | **Mocked Pass (25+ cases)** | Requires `FLAGSMITH_ADMIN_API_KEY` (write-scoped) + `FLAGSMITH_ENVIRONMENT_ID` (`118673`); reports `LIVE` only after Edge confirmation |
+| **Google Cloud** | Address Validation / Geocoding / AQI | **Mocked / Hermetic Pass** | Requires `GOOGLE_MAPS_AQI_ADDR_API_KEY`; preserves contextual AQI disclaimer |
+| **Gemini BYOM** | SRE RCA | **Mocked / Hermetic Pass** | Requires `GEMINI_API_KEY` (`gemini-flash-latest`) |
+| **Cloud SQL** | PostgreSQL DB | **Config & Probe Tested** | Requires reachable `DB_HOST` / `DATABASE_URL` in production; fails fast if unreachable |
 | **Kubernetes** | k3s / NudgeBee | **SIMULATED** | Truthfully reports `SIMULATED` when running without active SSH tunnel |
 
 ---
