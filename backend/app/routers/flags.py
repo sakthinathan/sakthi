@@ -104,8 +104,16 @@ async def toggle_surge_mode(
     )
     await db.commit()
 
+    actual_state = res.get("surge_mode_active", flagsmith_service.get_surge_mode())
+    if res.get("success"):
+        message = (
+            f"Surge survival mode {'ENABLED - Express delivery restricted to VIPs only' if actual_state else 'DISABLED - Normal delivery limits restored'}"
+        )
+    else:
+        message = f"Surge survival mode update unconfirmed ({res.get('status', 'UNAVAILABLE')}): {res.get('error', 'Remote update failed')}"
+
     return {
-        "surge_survival_mode": req.enabled,
+        "surge_survival_mode": actual_state,
         "management_api": res,
-        "message": f"Surge survival mode {'ENABLED - Express delivery restricted to VIPs only' if req.enabled else 'DISABLED - Normal delivery limits restored'}"
+        "message": message,
     }

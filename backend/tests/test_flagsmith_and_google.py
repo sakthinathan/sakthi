@@ -475,3 +475,292 @@ def test_flagsmith_test_15_vip_express_behavior_during_surge_and_base_disabled()
     assert fs.evaluate_vip_express_delivery("s3", is_vip=False)["allowed"] is False
     fs.local_overrides.clear()
 
+
+# --- PR #7: ADMIN KEY ISOLATION, FEATURE-STATE TARGETING & CONCURRENCY TESTS ---
+
+@pytest.mark.asyncio
+async def test_flagsmith_unrelated_keys_cannot_authorize_management_api():
+    """Agent 1: NudgeBee and legacy tokens must NEVER be accepted as Flagsmith admin credentials."""
+    isolated_settings = Settings(
+        FLAGSMITH_ADMIN_API_KEY=None,
+        NUDGEBEE_CIRCUIT_BREAKER_KEY="unrelated_nudgebee_key_value",
+        FLAGSMITH_API_TOKEN="legacy_flagsmith_token_value",
+        FLAGSMITH_ENVIRONMENT_ID=DUMMY_ENV_ID,
+    )
+    assert isolated_settings.flagsmith_admin_key is None
+    assert isolated_settings.has_flagsmith_admin is False
+
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+    with patch.object(fs, "settings", isolated_settings), \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get, \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        res = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+        assert res["status"] == "LOCAL_OVERRIDE"
+        assert res["source"] == "local_override"
+        mock_get.assert_not_called()
+        mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_admin_key_never_exposed_in_responses():
+    """Agent 1: Admin key must never appear in response payloads or error messages."""
+    fs = FlagsmithService()
+    mock_401 = MagicMock(status_code=401)
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", return_value=mock_401):
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert DUMMY_ADMIN_KEY not in str(res)
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_selects_env_state_even_after_identity_and_segment_states():
+    """Agent 2: Identity and segment overrides appearing before env state are ignored; only env state is patched."""
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+
+    mock_list = MagicMock(status_code=200)
+    mock_list.json.return_value = {"results": [{"uuid": "draft-uuid-multi", "published": False}]}
+
+    # Identity-specific and segment-specific states appear BEFORE the environment-level state (id=9003)
+    mock_fs = MagicMock(status_code=200)
+    mock_fs.json.return_value = [
+        {"id": 9001, "feature": 299379, "environment": 118673, "identity": 42, "feature_segment": None, "enabled": True},
+        {"id": 9002, "feature": 299379, "environment": 118673, "identity": None, "feature_segment": 77, "enabled": False},
+        {"id": 9003, "feature": 299379, "environment": 118673, "identity": None, "feature_segment": None, "enabled": False},
+    ]
+
+    mock_patch = MagicMock(status_code=200)
+    mock_pub = MagicMock(status_code=200)
+    mock_edge = MagicMock(status_code=200)
+    mock_edge.json.return_value = [{"feature": {"id": 299379, "name": "surge_survival_mode"}, "enabled": True}]
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value=DUMMY_SDK_KEY)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs, mock_edge]), \
+         patch("httpx.AsyncClient.patch", return_value=mock_patch) as patch_call, \
+         patch("httpx.AsyncClient.post", return_value=mock_pub):
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+        assert res["status"] == "LIVE"
+        patched_url = str(patch_call.call_args.args[0])
+        assert patched_url.endswith("/featurestates/9003/")
+        assert "/featurestates/9001/" not in patched_url
+        assert "/featurestates/9002/" not in patched_url
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_no_environment_level_state_returns_unavailable():
+    """Agent 2: Draft containing only identity/segment states (no env state) returns UNAVAILABLE without patching/publishing."""
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+
+    mock_list = MagicMock(status_code=200)
+    mock_list.json.return_value = {"results": [{"uuid": "draft-uuid-noenv", "published": False}]}
+
+    mock_fs = MagicMock(status_code=200)
+    mock_fs.json.return_value = [
+        {"id": 9001, "feature": 299379, "identity": 42, "feature_segment": None, "enabled": False},
+        {"id": 9002, "feature": 299379, "identity": None, "feature_segment": 77, "enabled": False},
+    ]
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs]), \
+         patch("httpx.AsyncClient.patch", new_callable=AsyncMock) as mock_patch, \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res["success"] is False
+        assert res["status"] == "UNAVAILABLE"
+        assert "no environment-level feature state" in res["error"].lower()
+        mock_patch.assert_not_called()
+        mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_unexpected_feature_id_returns_unavailable():
+    """Agent 2: Feature state entries for a different feature ID must be rejected."""
+    fs = FlagsmithService()
+    mock_list = MagicMock(status_code=200)
+    mock_list.json.return_value = {"results": [{"uuid": "draft-uuid-wrongfeat", "published": False}]}
+
+    mock_fs = MagicMock(status_code=200)
+    mock_fs.json.return_value = [
+        {"id": 8888, "feature": 299380, "identity": None, "feature_segment": None, "enabled": False}
+    ]
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs]), \
+         patch("httpx.AsyncClient.patch", new_callable=AsyncMock) as mock_patch:
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res["success"] is False
+        assert res["status"] == "UNAVAILABLE"
+        mock_patch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_ambiguous_or_malformed_feature_states_returns_unavailable():
+    """Agent 2: Multiple env-level states or malformed JSON returns UNAVAILABLE without patching."""
+    fs = FlagsmithService()
+    mock_list = MagicMock(status_code=200)
+    mock_list.json.return_value = {"results": [{"uuid": "draft-uuid-ambig", "published": False}]}
+
+    # Case A: Two environment-level states for the same feature
+    mock_fs_ambig = MagicMock(status_code=200)
+    mock_fs_ambig.json.return_value = [
+        {"id": 1001, "feature": 299379, "identity": None, "feature_segment": None, "enabled": False},
+        {"id": 1002, "feature": 299379, "identity": None, "feature_segment": None, "enabled": True},
+    ]
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs_ambig]), \
+         patch("httpx.AsyncClient.patch", new_callable=AsyncMock) as mock_patch:
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res["success"] is False
+        assert res["status"] == "UNAVAILABLE"
+        assert "ambiguous" in res["error"].lower()
+        mock_patch.assert_not_called()
+
+    # Case B: Malformed response payload
+    mock_fs_bad = MagicMock(status_code=200)
+    mock_fs_bad.json.return_value = {"unexpected": "schema"}
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs_bad]), \
+         patch("httpx.AsyncClient.patch", new_callable=AsyncMock) as mock_patch:
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res["success"] is False
+        assert res["status"] == "UNAVAILABLE"
+        assert "malformed" in res["error"].lower()
+        mock_patch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_multiple_unpublished_drafts_fails_safely():
+    """Agent 3: Never silently select an arbitrary draft when multiple unpublished drafts exist."""
+    fs = FlagsmithService()
+    mock_list = MagicMock(status_code=200)
+    mock_list.json.return_value = {
+        "results": [
+            {"uuid": "draft-1", "published": False},
+            {"uuid": "draft-2", "published": False},
+        ]
+    }
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch("httpx.AsyncClient.get", return_value=mock_list), \
+         patch("httpx.AsyncClient.patch", new_callable=AsyncMock) as mock_patch, \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+
+        res = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res["success"] is False
+        assert res["status"] == "UNAVAILABLE"
+        assert "multiple unpublished draft" in res["error"].lower()
+        mock_patch.assert_not_called()
+        mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_concurrent_updates_are_serialized():
+    """Agent 3: Concurrent operator requests for the same feature are serialized via per-feature lock."""
+    import asyncio
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+
+    active_inside_lock = 0
+    max_concurrent = 0
+
+    async def slow_get(url, **kwargs):
+        nonlocal active_inside_lock, max_concurrent
+        if "/versions/" in str(url) and "/featurestates/" not in str(url):
+            active_inside_lock += 1
+            max_concurrent = max(max_concurrent, active_inside_lock)
+            await asyncio.sleep(0.02)
+            m = MagicMock(status_code=200)
+            m.json.return_value = {"results": [{"uuid": "draft-seq", "published": False}]}
+            return m
+        elif "/featurestates/" in str(url):
+            m = MagicMock(status_code=200)
+            m.json.return_value = [{"id": 5555, "feature": 299379, "enabled": False}]
+            return m
+        elif "/flags/" in str(url):
+            active_inside_lock -= 1
+            m = MagicMock(status_code=200)
+            m.json.return_value = [{"feature": {"id": 299379, "name": "surge_survival_mode"}, "enabled": True}]
+            return m
+        return MagicMock(status_code=404)
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value=DUMMY_SDK_KEY)), \
+         patch("httpx.AsyncClient.get", side_effect=slow_get), \
+         patch("httpx.AsyncClient.patch", return_value=MagicMock(status_code=200)), \
+         patch("httpx.AsyncClient.post", return_value=MagicMock(status_code=200)):
+
+        r1, r2 = await asyncio.gather(
+            fs.update_feature_state_remote(enabled=True, feature_id="299379"),
+            fs.update_feature_state_remote(enabled=True, feature_id="299379"),
+        )
+        assert r1["status"] == "LIVE"
+        assert r2["status"] == "LIVE"
+        assert max_concurrent == 1
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_edge_propagation_delay_recovery_and_retry_after_publish_failure():
+    """Agent 3: Retry after publish failure reuses draft; Edge delay recovery succeeds only on match."""
+    fs = FlagsmithService()
+    fs.local_overrides.clear()
+
+    mock_list = MagicMock(status_code=200)
+    mock_list.json.return_value = {"results": [{"uuid": "draft-retry", "published": False}]}
+    mock_fs = MagicMock(status_code=200)
+    mock_fs.json.return_value = [{"id": 5555, "feature": 299379, "enabled": False}]
+    mock_patch = MagicMock(status_code=200)
+    mock_pub_fail = MagicMock(status_code=503)
+    mock_pub_ok = MagicMock(status_code=200)
+
+    # First attempt: publish fails with 503
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value=DUMMY_SDK_KEY)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs]), \
+         patch("httpx.AsyncClient.patch", return_value=mock_patch), \
+         patch("httpx.AsyncClient.post", return_value=mock_pub_fail):
+        res1 = await fs.update_feature_state_remote(enabled=True, feature_id="299379")
+        assert res1["status"] == "UNAVAILABLE"
+        assert fs.local_overrides.get("surge_survival_mode") is not True
+
+    # Second attempt: reuses draft-retry, publishes, Edge initially stale (False) then matches (True)
+    mock_edge_stale = MagicMock(status_code=200)
+    mock_edge_stale.json.return_value = [{"feature": {"id": 299379, "name": "surge_survival_mode"}, "enabled": False}]
+    mock_edge_fresh = MagicMock(status_code=200)
+    mock_edge_fresh.json.return_value = [{"feature": {"id": 299379, "name": "surge_survival_mode"}, "enabled": True}]
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=DUMMY_ADMIN_KEY)), \
+         patch.object(Settings, "flagsmith_environment_id", PropertyMock(return_value=DUMMY_ENV_ID)), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value=DUMMY_SDK_KEY)), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_list, mock_fs, mock_edge_stale, mock_edge_fresh]), \
+         patch("httpx.AsyncClient.patch", return_value=mock_patch), \
+         patch("httpx.AsyncClient.post", return_value=mock_pub_ok):
+        res2 = await fs.update_feature_state_remote(
+            enabled=True,
+            feature_id="299379",
+            edge_confirm_attempts=2,
+            edge_confirm_delay_s=0.0,
+        )
+        assert res2["status"] == "LIVE"
+        assert res2["version_uuid"] == "draft-retry"
+        assert fs.local_overrides.get("surge_survival_mode") is True
+
+

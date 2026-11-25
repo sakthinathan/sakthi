@@ -117,12 +117,11 @@ class Settings(BaseSettings):
 
     @property
     def flagsmith_admin_key(self) -> Optional[str]:
-        """Unified Flagsmith Server-side Admin / Circuit-Breaker API Key"""
-        return (
-            self.flagsmith_admin_api_key
-            or self.nudgebee_circuit_breaker_key
-            or self.flagsmith_api_token_legacy
-        )
+        """Flagsmith Management API Admin Key (strictly FLAGSMITH_ADMIN_API_KEY only, no legacy or NudgeBee fallback)"""
+        if not self.flagsmith_admin_api_key:
+            return None
+        cleaned = self.flagsmith_admin_api_key.strip()
+        return cleaned or None
 
     @property
     def gcp_region(self) -> Optional[str]:
@@ -165,7 +164,13 @@ class Settings(BaseSettings):
     def has_flagsmith_admin(self) -> bool:
         key = self.flagsmith_admin_key
         env_id = self.flagsmith_environment_id
-        return bool(key and not key.startswith("your-") and env_id and not str(env_id).startswith("your-"))
+        clean_env_id = str(env_id).strip() if env_id is not None else ""
+        return bool(
+            key
+            and not key.startswith("your-")
+            and clean_env_id
+            and not clean_env_id.startswith("your-")
+        )
 
     @property
     def has_google_maps(self) -> bool:

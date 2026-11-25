@@ -16,7 +16,8 @@ Security:
 - FLAGSMITH_ADMIN_API_KEY is restricted to server-side operations only
 - Credentials are never leaked to client responses or frontend
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
+import asyncio
 import httpx
 import structlog
 from app.config import get_settings
@@ -45,6 +46,7 @@ class FlagsmithService:
         self.settings = get_settings()
         self.client = None
         self.local_overrides = {}
+        self._update_locks: Dict[Tuple[int, str, str], asyncio.Lock] = {}
 
         if self.settings.has_flagsmith:
             try:
@@ -189,11 +191,81 @@ class FlagsmithService:
         eval_result = self.evaluate_vip_express_delivery(customer_id, is_vip)
         return eval_result["allowed"]
 
+    def _get_feature_lock(self, env_id: str, feature_id: str) -> asyncio.Lock:
+        """Return a per-(event_loop, env_id, feature_id) lock to serialize concurrent draft mutations."""
+        if not hasattr(self, "_update_locks"):
+            self._update_locks = {}
+        loop_id = id(asyncio.get_running_loop())
+        key = (loop_id, env_id, feature_id)
+        if key not in self._update_locks:
+            self._update_locks[key] = asyncio.Lock()
+        return self._update_locks[key]
+
+    @staticmethod
+    def _select_environment_feature_state(
+        fs_data: Any,
+        target_feature_id: str,
+        clean_env_id: str,
+    ) -> Tuple[Optional[Any], Optional[str]]:
+        """
+        Explicitly select the single environment-level feature state for target_feature_id.
+        Rejects identity-specific, segment-specific, wrong-feature, wrong-environment,
+        missing, or ambiguous entries.
+        """
+        if isinstance(fs_data, list):
+            fs_items = fs_data
+        elif isinstance(fs_data, dict) and isinstance(fs_data.get("results"), list):
+            fs_items = fs_data["results"]
+        else:
+            return None, "Malformed draft feature states response from Flagsmith"
+
+        if not fs_items:
+            return None, "No feature state entries found in draft version"
+
+        env_matches = []
+        for item in fs_items:
+            if not isinstance(item, dict):
+                return None, "Malformed feature state entry in draft version"
+
+            # Validate feature ID
+            feat_val = item.get("feature")
+            item_feat_id = feat_val.get("id") if isinstance(feat_val, dict) else feat_val
+            if item_feat_id is None or str(item_feat_id) != str(target_feature_id):
+                continue
+
+            # Exclude identity-specific and segment-specific feature states
+            if item.get("identity") is not None:
+                continue
+            if item.get("feature_segment") is not None or item.get("segment") is not None:
+                continue
+
+            # Validate environment ID if included in payload
+            env_val = item.get("environment")
+            if env_val is not None:
+                item_env_id = env_val.get("id") if isinstance(env_val, dict) else env_val
+                if item_env_id is not None and str(item_env_id) != str(clean_env_id):
+                    continue
+
+            if item.get("id") is None:
+                return None, "Environment-level feature state missing ID"
+
+            env_matches.append(item)
+
+        if not env_matches:
+            return None, f"No environment-level feature state found for feature ID '{target_feature_id}' in draft version"
+
+        if len(env_matches) > 1:
+            return None, f"Ambiguous draft response: {len(env_matches)} environment-level feature states found for feature ID '{target_feature_id}'"
+
+        return env_matches[0]["id"], None
+
     async def update_feature_state_remote(
         self,
         enabled: bool,
         feature_name: str = "surge_survival_mode",
-        feature_id: Optional[str] = None
+        feature_id: Optional[str] = None,
+        edge_confirm_attempts: int = 1,
+        edge_confirm_delay_s: float = 0.25,
     ) -> Dict[str, Any]:
         """
         Execute authenticated HTTP requests against the official Flagsmith Management API (v2 versioning).
@@ -274,165 +346,296 @@ class FlagsmithService:
         versions_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/"
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # 1. Inspect existing versions to verify permissions and avoid duplicate draft creation
-                list_resp = await client.get(versions_url, headers=headers)
+            async with self._get_feature_lock(clean_env_id, target_feature_id):
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # 1. Inspect existing versions to verify permissions and avoid duplicate draft creation
+                    list_resp = await client.get(versions_url, headers=headers)
 
-                if list_resp.status_code in (401, 403):
-                    logger.error("Flagsmith Management API unauthorized", status_code=list_resp.status_code)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "status_code": list_resp.status_code,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": f"Flagsmith Management API returned HTTP {list_resp.status_code}. Key lacks write permission."
-                    }
-
-                if list_resp.status_code == 404:
-                    logger.error("Flagsmith environment ID or feature ID not found", env_id=clean_env_id, feature_id=target_feature_id)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "status_code": 404,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": f"Environment ID '{clean_env_id}' or feature ID '{target_feature_id}' not found on Flagsmith (HTTP 404)"
-                    }
-
-                if list_resp.status_code != 200:
-                    logger.error("Flagsmith Management API versions query failed", status_code=list_resp.status_code)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "status_code": list_resp.status_code,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": f"Flagsmith versions query returned HTTP {list_resp.status_code}"
-                    }
-
-                # 2. Check for an existing unpublished draft version to avoid duplicate drafts
-                draft_uuid = None
-                versions_data = list_resp.json()
-                results = versions_data.get("results", versions_data) if isinstance(versions_data, dict) else versions_data
-                if isinstance(results, list):
-                    for v in results:
-                        if isinstance(v, dict) and v.get("published") is False and v.get("uuid"):
-                            draft_uuid = v["uuid"]
-                            break
-
-                # If no existing draft, create one
-                if not draft_uuid:
-                    create_resp = await client.post(versions_url, headers=headers, json={})
-                    if create_resp.status_code not in (200, 201):
-                        logger.error("Flagsmith draft version creation failed", status_code=create_resp.status_code)
+                    if list_resp.status_code in (401, 403):
+                        logger.error("Flagsmith Management API unauthorized", status_code=list_resp.status_code)
                         return {
                             "success": False,
                             "enabled": self.is_flag_enabled(feature_name),
                             "source": "remote_failed",
                             "status": "UNAVAILABLE",
-                            "status_code": create_resp.status_code,
+                            "status_code": list_resp.status_code,
                             "feature_name": feature_name,
                             "feature_id": target_feature_id,
-                            "error": f"Failed to create draft version (HTTP {create_resp.status_code})"
+                            "error": f"Flagsmith Management API returned HTTP {list_resp.status_code}. Key lacks write permission."
                         }
-                    draft_uuid = create_resp.json().get("uuid")
 
-                if not draft_uuid:
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": "Failed to obtain valid draft version UUID from Flagsmith"
-                    }
+                    if list_resp.status_code == 404:
+                        logger.error("Flagsmith environment ID or feature ID not found", env_id=clean_env_id, feature_id=target_feature_id)
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "status_code": 404,
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": f"Environment ID '{clean_env_id}' or feature ID '{target_feature_id}' not found on Flagsmith (HTTP 404)"
+                        }
 
-                # 3. Retrieve feature states inside this draft version
-                draft_fs_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/{draft_uuid}/featurestates/"
-                fs_resp = await client.get(draft_fs_url, headers=headers)
-                if fs_resp.status_code != 200:
-                    logger.error("Flagsmith draft feature states lookup failed", status_code=fs_resp.status_code)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "status_code": fs_resp.status_code,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": f"Failed to retrieve draft feature states (HTTP {fs_resp.status_code})"
-                    }
+                    if list_resp.status_code != 200:
+                        logger.error("Flagsmith Management API versions query failed", status_code=list_resp.status_code)
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "status_code": list_resp.status_code,
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": f"Flagsmith versions query returned HTTP {list_resp.status_code}"
+                        }
 
-                fs_data = fs_resp.json()
-                fs_items = fs_data if isinstance(fs_data, list) else fs_data.get("results", [])
-                if not fs_items:
-                    logger.error("No feature states found in Flagsmith draft version")
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": "No feature state entries found in draft version"
-                    }
+                    # 2. Check for existing unpublished draft versions; never silently pick among multiple drafts
+                    versions_data = list_resp.json()
+                    if isinstance(versions_data, list):
+                        results = versions_data
+                    elif isinstance(versions_data, dict) and isinstance(versions_data.get("results"), list):
+                        results = versions_data["results"]
+                    else:
+                        logger.error("Malformed Flagsmith versions response")
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": "Malformed Flagsmith versions response"
+                        }
 
-                draft_fs_id = fs_items[0].get("id")
-                if not draft_fs_id:
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": "Draft feature state missing ID"
-                    }
+                    unpublished_drafts = [
+                        v for v in results
+                        if isinstance(v, dict) and v.get("published") is False and v.get("uuid")
+                    ]
+                    if len(unpublished_drafts) > 1:
+                        logger.error(
+                            "Multiple unpublished Flagsmith drafts found",
+                            feature_id=target_feature_id,
+                            draft_count=len(unpublished_drafts),
+                        )
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": f"Multiple unpublished draft versions ({len(unpublished_drafts)}) exist for feature '{feature_name}'. Resolve drafts before mutating."
+                        }
 
-                # 4. Update the draft feature state
-                patch_fs_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/{draft_uuid}/featurestates/{draft_fs_id}/"
-                patch_resp = await client.patch(patch_fs_url, headers=headers, json={"enabled": enabled})
-                if patch_resp.status_code not in (200, 201):
-                    logger.error("Flagsmith draft feature state PATCH failed", status_code=patch_resp.status_code)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "status_code": patch_resp.status_code,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": f"Draft feature state PATCH failed (HTTP {patch_resp.status_code})"
-                    }
+                    draft_uuid = unpublished_drafts[0]["uuid"] if len(unpublished_drafts) == 1 else None
 
-                # 5. Publish the draft version
-                pub_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/{draft_uuid}/publish/"
-                pub_resp = await client.post(pub_url, headers=headers, json={})
-                if pub_resp.status_code not in (200, 201):
-                    logger.error("Flagsmith version publish failed", status_code=pub_resp.status_code)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_failed",
-                        "status": "UNAVAILABLE",
-                        "status_code": pub_resp.status_code,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "error": f"Flagsmith version publish failed (HTTP {pub_resp.status_code})"
-                    }
+                    # If no existing draft, create one
+                    if not draft_uuid:
+                        create_resp = await client.post(versions_url, headers=headers, json={})
+                        if create_resp.status_code not in (200, 201):
+                            logger.error("Flagsmith draft version creation failed", status_code=create_resp.status_code)
+                            return {
+                                "success": False,
+                                "enabled": self.is_flag_enabled(feature_name),
+                                "source": "remote_failed",
+                                "status": "UNAVAILABLE",
+                                "status_code": create_resp.status_code,
+                                "feature_name": feature_name,
+                                "feature_id": target_feature_id,
+                                "error": f"Failed to create draft version (HTTP {create_resp.status_code})"
+                            }
+                        created_data = create_resp.json()
+                        draft_uuid = created_data.get("uuid") if isinstance(created_data, dict) else None
 
-                # 6. CRITICAL: Confirm published value via Edge API evaluation
-                if not sdk_key:
-                    logger.warn("SDK environment key absent; cannot confirm via Edge API")
-                    return {
+                    if not draft_uuid:
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": "Failed to obtain valid draft version UUID from Flagsmith"
+                        }
+
+                    # 3. Retrieve feature states inside this draft version and select environment-level state
+                    draft_fs_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/{draft_uuid}/featurestates/"
+                    fs_resp = await client.get(draft_fs_url, headers=headers)
+                    if fs_resp.status_code != 200:
+                        logger.error("Flagsmith draft feature states lookup failed", status_code=fs_resp.status_code)
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "status_code": fs_resp.status_code,
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": f"Failed to retrieve draft feature states (HTTP {fs_resp.status_code})"
+                        }
+
+                    draft_fs_id, selection_error = self._select_environment_feature_state(
+                        fs_resp.json(),
+                        target_feature_id=target_feature_id,
+                        clean_env_id=clean_env_id,
+                    )
+                    if selection_error or not draft_fs_id:
+                        logger.error("Flagsmith draft feature state selection failed", reason=selection_error)
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": selection_error or "Unable to identify environment-level feature state"
+                        }
+
+                    # 4. Update the environment-level draft feature state
+                    patch_fs_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/{draft_uuid}/featurestates/{draft_fs_id}/"
+                    patch_resp = await client.patch(patch_fs_url, headers=headers, json={"enabled": enabled})
+                    if patch_resp.status_code not in (200, 201):
+                        logger.error("Flagsmith draft feature state PATCH failed", status_code=patch_resp.status_code)
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "status_code": patch_resp.status_code,
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": f"Draft feature state PATCH failed (HTTP {patch_resp.status_code})"
+                        }
+
+                    # 5. Publish the draft version
+                    pub_url = f"{base_api}/environments/{clean_env_id}/features/{target_feature_id}/versions/{draft_uuid}/publish/"
+                    pub_resp = await client.post(pub_url, headers=headers, json={})
+                    if pub_resp.status_code not in (200, 201):
+                        logger.error("Flagsmith version publish failed", status_code=pub_resp.status_code)
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_failed",
+                            "status": "UNAVAILABLE",
+                            "status_code": pub_resp.status_code,
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "error": f"Flagsmith version publish failed (HTTP {pub_resp.status_code})"
+                        }
+
+                    # 6. CRITICAL: Confirm published value via Edge API evaluation
+                    if not sdk_key:
+                        logger.warn("SDK environment key absent; cannot confirm via Edge API")
+                        return {
+                            "success": False,
+                            "enabled": self.is_flag_enabled(feature_name),
+                            "source": "remote_unconfirmed",
+                            "status": "UNAVAILABLE",
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "version_uuid": draft_uuid,
+                            "error": "Version published on Management API but cannot confirm: FLAGSMITH_ENV_KEY is absent"
+                        }
+
+                    edge_url = "https://edge.api.flagsmith.com/api/v1/flags/"
+                    edge_headers = {"X-Environment-Key": sdk_key}
+                    attempts = max(1, int(edge_confirm_attempts))
+                    last_failure: Optional[Dict[str, Any]] = None
+
+                    for attempt in range(attempts):
+                        if attempt > 0 and edge_confirm_delay_s > 0:
+                            await asyncio.sleep(edge_confirm_delay_s)
+
+                        try:
+                            edge_resp = await client.get(edge_url, headers=edge_headers)
+                        except Exception as edge_err:
+                            logger.error("Flagsmith Edge API confirmation network error", error=type(edge_err).__name__)
+                            last_failure = {
+                                "success": False,
+                                "enabled": self.is_flag_enabled(feature_name),
+                                "source": "remote_unconfirmed",
+                                "status": "UNAVAILABLE",
+                                "feature_name": feature_name,
+                                "feature_id": target_feature_id,
+                                "version_uuid": draft_uuid,
+                                "error": f"Version published but Edge API confirmation failed: {type(edge_err).__name__}"
+                            }
+                            continue
+
+                        if edge_resp.status_code != 200:
+                            logger.error("Flagsmith Edge API confirmation returned non-200", status_code=edge_resp.status_code)
+                            last_failure = {
+                                "success": False,
+                                "enabled": self.is_flag_enabled(feature_name),
+                                "source": "remote_unconfirmed",
+                                "status": "UNAVAILABLE",
+                                "status_code": edge_resp.status_code,
+                                "feature_name": feature_name,
+                                "feature_id": target_feature_id,
+                                "version_uuid": draft_uuid,
+                                "error": f"Version published but Edge API returned HTTP {edge_resp.status_code}"
+                            }
+                            continue
+
+                        edge_flags = edge_resp.json()
+                        confirmed_val = None
+                        found_flag = False
+                        if isinstance(edge_flags, list):
+                            for f in edge_flags:
+                                if not isinstance(f, dict):
+                                    continue
+                                feat_info = f.get("feature", {})
+                                if not isinstance(feat_info, dict):
+                                    continue
+                                if str(feat_info.get("id")) == str(target_feature_id) or feat_info.get("name") == feature_name:
+                                    confirmed_val = f.get("enabled")
+                                    found_flag = True
+                                    break
+
+                        if not found_flag:
+                            logger.error("Flagsmith Edge API confirmation flag not found", feature=feature_name)
+                            last_failure = {
+                                "success": False,
+                                "enabled": self.is_flag_enabled(feature_name),
+                                "source": "remote_unconfirmed",
+                                "status": "UNAVAILABLE",
+                                "feature_name": feature_name,
+                                "feature_id": target_feature_id,
+                                "version_uuid": draft_uuid,
+                                "error": f"Feature '{feature_name}' not found in Edge API flags"
+                            }
+                            continue
+
+                        if confirmed_val != enabled:
+                            logger.error("Flagsmith Edge confirmation mismatch", expected=enabled, actual=confirmed_val)
+                            last_failure = {
+                                "success": False,
+                                "enabled": confirmed_val,
+                                "source": "remote_mismatch",
+                                "status": "REMOTE_MISMATCH",
+                                "feature_name": feature_name,
+                                "feature_id": target_feature_id,
+                                "version_uuid": draft_uuid,
+                                "error": f"Edge API confirmation mismatch: expected {enabled}, but Edge returned {confirmed_val}"
+                            }
+                            continue
+
+                        # 7. Success: Edge API verified and matches! Sync local state and return LIVE
+                        self.local_overrides[feature_name] = confirmed_val
+                        logger.info("Flagsmith v2 update confirmed via Edge API", feature=feature_name, enabled=confirmed_val, version_uuid=draft_uuid)
+                        return {
+                            "success": True,
+                            "enabled": confirmed_val,
+                            "source": "flagsmith_remote_admin",
+                            "status": "LIVE",
+                            "feature_name": feature_name,
+                            "feature_id": target_feature_id,
+                            "version_uuid": draft_uuid,
+                            "message": f"Successfully updated feature '{feature_name}' ({target_feature_id}) to {confirmed_val} via Flagsmith Management API and confirmed via Edge API"
+                        }
+
+                    return last_failure or {
                         "success": False,
                         "enabled": self.is_flag_enabled(feature_name),
                         "source": "remote_unconfirmed",
@@ -440,91 +643,8 @@ class FlagsmithService:
                         "feature_name": feature_name,
                         "feature_id": target_feature_id,
                         "version_uuid": draft_uuid,
-                        "error": "Version published on Management API but cannot confirm: FLAGSMITH_ENV_KEY is absent"
+                        "error": "Edge API confirmation failed"
                     }
-
-                edge_url = "https://edge.api.flagsmith.com/api/v1/flags/"
-                edge_headers = {"X-Environment-Key": sdk_key}
-                try:
-                    edge_resp = await client.get(edge_url, headers=edge_headers)
-                except Exception as edge_err:
-                    logger.error("Flagsmith Edge API confirmation network error", error=type(edge_err).__name__)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_unconfirmed",
-                        "status": "UNAVAILABLE",
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "version_uuid": draft_uuid,
-                        "error": f"Version published but Edge API confirmation failed: {type(edge_err).__name__}"
-                    }
-
-                if edge_resp.status_code != 200:
-                    logger.error("Flagsmith Edge API confirmation returned non-200", status_code=edge_resp.status_code)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_unconfirmed",
-                        "status": "UNAVAILABLE",
-                        "status_code": edge_resp.status_code,
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "version_uuid": draft_uuid,
-                        "error": f"Version published but Edge API returned HTTP {edge_resp.status_code}"
-                    }
-
-                # Parse Edge API flags
-                edge_flags = edge_resp.json()
-                confirmed_val = None
-                found_flag = False
-                if isinstance(edge_flags, list):
-                    for f in edge_flags:
-                        feat_info = f.get("feature", {})
-                        if str(feat_info.get("id")) == str(target_feature_id) or feat_info.get("name") == feature_name:
-                            confirmed_val = f.get("enabled")
-                            found_flag = True
-                            break
-
-                if not found_flag:
-                    logger.error("Flagsmith Edge API confirmation flag not found", feature=feature_name)
-                    return {
-                        "success": False,
-                        "enabled": self.is_flag_enabled(feature_name),
-                        "source": "remote_unconfirmed",
-                        "status": "UNAVAILABLE",
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "version_uuid": draft_uuid,
-                        "error": f"Feature '{feature_name}' not found in Edge API flags"
-                    }
-
-                if confirmed_val != enabled:
-                    logger.error("Flagsmith Edge confirmation mismatch", expected=enabled, actual=confirmed_val)
-                    return {
-                        "success": False,
-                        "enabled": confirmed_val,
-                        "source": "remote_mismatch",
-                        "status": "REMOTE_MISMATCH",
-                        "feature_name": feature_name,
-                        "feature_id": target_feature_id,
-                        "version_uuid": draft_uuid,
-                        "error": f"Edge API confirmation mismatch: expected {enabled}, but Edge returned {confirmed_val}"
-                    }
-
-                # 7. Success: Edge API verified and matches! Sync local state and return LIVE
-                self.local_overrides[feature_name] = confirmed_val
-                logger.info("Flagsmith v2 update confirmed via Edge API", feature=feature_name, enabled=confirmed_val, version_uuid=draft_uuid)
-                return {
-                    "success": True,
-                    "enabled": confirmed_val,
-                    "source": "flagsmith_remote_admin",
-                    "status": "LIVE",
-                    "feature_name": feature_name,
-                    "feature_id": target_feature_id,
-                    "version_uuid": draft_uuid,
-                    "message": f"Successfully updated feature '{feature_name}' ({target_feature_id}) to {confirmed_val} via Flagsmith Management API and confirmed via Edge API"
-                }
 
         except httpx.HTTPError as e:
             logger.error("Flagsmith Management API HTTP exception", error=type(e).__name__)
