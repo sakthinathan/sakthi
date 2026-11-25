@@ -7,6 +7,18 @@ on:
     branches: [ main ]
 
 jobs:
+  secret-scan:
+    name: Secret & Credential Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify no live API tokens or credentials in tracked files
+        run: |
+          echo "Scanning tracked repository files for exposed credentials..."
+          ! git grep -E "(8coM1k1z|P71EA9Yr|ghp_[A-Za-z0-9]{20,}|BEGIN (RSA|EC|DSA|OPENSSH) PRIVATE)" $(git ls-files | grep -v '^\.github/workflows/ci\.yml')
+
   backend-test:
     name: Backend Tests & Lint
     runs-on: ubuntu-latest
@@ -47,7 +59,7 @@ jobs:
           APP_ENV: testing
           DATABASE_URL: sqlite+aiosqlite:///./test_utsavops.db
           AUTH_SECRET_KEY: test-auth-secret-key-32-chars-minimum-required!
-          INITIAL_ADMIN_PASSWORD: UtsavOps2026!Secure
+          INITIAL_ADMIN_PASSWORD: ci-test-fixture-admin-password-2026!
         run: |
           cd backend
           pytest tests/ -v

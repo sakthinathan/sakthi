@@ -29,6 +29,12 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_utsavops.db"
 os.environ["DB_HOST"] = ""
 os.environ["AUTH_SECRET_KEY"] = "test-auth-secret-key-minimum-32-characters-long!"
 os.environ["INITIAL_ADMIN_PASSWORD"] = "UtsavOps2026!Secure"
+os.environ["FLAGSMITH_ADMIN_API_KEY"] = ""
+os.environ["NUDGEBEE_CIRCUIT_BREAKER_KEY"] = ""
+os.environ["FLAGSMITH_API_TOKEN"] = ""
+os.environ["FLAGSMITH_ENV_KEY"] = ""
+os.environ["FLAGSMITH_ENVIRONMENT_KEY"] = ""
+os.environ["FLAGSMITH_ENVIRONMENT_ID"] = ""
 
 import httpx
 

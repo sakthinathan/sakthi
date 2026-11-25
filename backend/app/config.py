@@ -60,11 +60,12 @@ class Settings(BaseSettings):
     sarvam_base_url: str = Field("https://api.sarvam.ai", validation_alias="SARVAM_BASE_URL")
 
     # --- Flagsmith ---
-    flagsmith_env_key: Optional[str] = Field(None, validation_alias="FLAGSMITH_ENV_KEY")
+    flagsmith_env_key: Optional[str] = Field(None, validation_alias="FLAGSMITH_ENV_KEY", description="Flagsmith SDK/Edge client key only")
     flagsmith_environment_key_legacy: Optional[str] = Field(None, validation_alias="FLAGSMITH_ENVIRONMENT_KEY")
+    flagsmith_environment_id_raw: Optional[str] = Field(None, validation_alias="FLAGSMITH_ENVIRONMENT_ID", description="Flagsmith Management API numeric environment ID")
     flagsmith_express_delivery_feature_id: Optional[str] = Field("299380", validation_alias="FLAGSMITH_EXPRESS_DELIVERY_FEATURE_ID")
     flagsmith_surge_mode_feature_id: Optional[str] = Field("299379", validation_alias="FLAGSMITH_SURGE_MODE_FEATURE_ID")
-    flagsmith_admin_api_key: Optional[str] = Field(None, validation_alias="FLAGSMITH_ADMIN_API_KEY")
+    flagsmith_admin_api_key: Optional[str] = Field(None, validation_alias="FLAGSMITH_ADMIN_API_KEY", description="Flagsmith Management API master admin key")
     nudgebee_circuit_breaker_key: Optional[str] = Field(None, validation_alias="NUDGEBEE_CIRCUIT_BREAKER_KEY")
     flagsmith_api_token_legacy: Optional[str] = Field(None, validation_alias="FLAGSMITH_API_TOKEN")
     flagsmith_server_url: str = Field("https://edge.api.flagsmith.com/api/v1/", validation_alias="FLAGSMITH_SERVER_URL")
@@ -108,6 +109,11 @@ class Settings(BaseSettings):
     def flagsmith_environment_key(self) -> Optional[str]:
         """Unified Flagsmith Environment Client Key"""
         return self.flagsmith_env_key or self.flagsmith_environment_key_legacy
+
+    @property
+    def flagsmith_environment_id(self) -> Optional[str]:
+        """Flagsmith Management API Numeric Environment ID (e.g. '118673')"""
+        return self.flagsmith_environment_id_raw
 
     @property
     def flagsmith_admin_key(self) -> Optional[str]:
@@ -158,7 +164,8 @@ class Settings(BaseSettings):
     @property
     def has_flagsmith_admin(self) -> bool:
         key = self.flagsmith_admin_key
-        return bool(key and not key.startswith("your-"))
+        env_id = self.flagsmith_environment_id
+        return bool(key and not key.startswith("your-") and env_id and not str(env_id).startswith("your-"))
 
     @property
     def has_google_maps(self) -> bool:
