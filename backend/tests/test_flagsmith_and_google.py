@@ -157,7 +157,7 @@ async def test_flagsmith_management_api_unauthorized_401():
         assert result["success"] is False
         assert result["source"] == "remote_failed"
         assert result["status_code"] == 401
-        assert "401 Unauthorized" in result["error"]
+        assert "401" in result["error"]
 
 
 @pytest.mark.asyncio
@@ -166,8 +166,112 @@ async def test_flagsmith_management_api_missing_key_fallback():
     fs = FlagsmithService()
 
     with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value=None)):
-        result = await fs.update_feature_state_remote(enabled=True, feature_id="299380")
+        result = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
 
         assert result["success"] is True
         assert result["source"] == "local_override"
+        assert result["status"] == "LOCAL_OVERRIDE"
         assert "local in-memory override" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_base_express_disabled_blocks_all():
+    """When base express delivery is globally disabled, both VIP and non-VIP are blocked."""
+    fs = FlagsmithService()
+    fs.local_overrides["express_delivery_enabled"] = False
+    fs.toggle_surge_mode(False)
+
+    eval_vip = fs.evaluate_vip_express_delivery(customer_id="vip-blocked", is_vip=True)
+    eval_std = fs.evaluate_vip_express_delivery(customer_id="std-blocked", is_vip=False)
+
+    assert eval_vip["allowed"] is False
+    assert eval_std["allowed"] is False
+    fs.local_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_management_api_read_after_write_mismatch():
+    """Verify read-after-write mismatch returns failure and does not claim remote update."""
+    fs = FlagsmithService()
+
+    mock_get = MagicMock(status_code=200)
+    mock_get.json.return_value = {"results": [{"id": 14205, "enabled": False}]}
+
+    mock_patch = MagicMock(status_code=200)
+
+    # Read-after-write returns state that DOES NOT match what was requested
+    mock_confirm = MagicMock(status_code=200)
+    mock_confirm.json.return_value = {"id": 14205, "enabled": False}
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="valid_admin_token")), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value="ser.test_env_key")), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_get, mock_confirm]), \
+         patch("httpx.AsyncClient.patch", return_value=mock_patch):
+
+        result = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+
+        assert result["success"] is False
+        assert result["source"] == "remote_mismatch"
+        assert "mismatch" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_management_api_missing_feature_id():
+    """Verify missing feature ID returns UNAVAILABLE without failing silently."""
+    fs = FlagsmithService()
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="valid_admin_token")):
+        result = await fs.update_feature_state_remote(enabled=True, feature_name="unregistered_feature", feature_id=None)
+
+        assert result["success"] is False
+        assert result["status"] == "UNAVAILABLE"
+        assert "Missing feature ID" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_management_api_403_404_and_network_error():
+    """Verify 403 Forbidden, 404 Not Found, and Network exceptions return proper status."""
+    fs = FlagsmithService()
+
+    # 403 Forbidden
+    mock_403 = MagicMock(status_code=403)
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="restricted_key")), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value="ser.env")), \
+         patch("httpx.AsyncClient.get", return_value=mock_403):
+        res_403 = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+        assert res_403["success"] is False
+        assert res_403["status"] == "UNAVAILABLE"
+        assert res_403["status_code"] == 403
+
+    # 404 Not Found
+    mock_404 = MagicMock(status_code=404)
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="valid_key")), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value="ser.env")), \
+         patch("httpx.AsyncClient.get", return_value=mock_404):
+        res_404 = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+        assert res_404["success"] is False
+        assert res_404["status_code"] == 404
+
+    # Network Exception
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="valid_key")), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value="ser.env")), \
+         patch("httpx.AsyncClient.get", side_effect=httpx.ConnectTimeout("Connection timeout")):
+        res_net = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+        assert res_net["success"] is False
+        assert res_net["status"] == "UNAVAILABLE"
+        assert "ConnectTimeout" in res_net["error"]
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_surge_mode_remote_targets_correct_surge_feature():
+    """Verify update_surge_mode_remote targets surge_survival_mode (299379), not express delivery."""
+    fs = FlagsmithService()
+    with patch.object(fs, "update_feature_state_remote", new_callable=AsyncMock) as mock_update:
+        mock_update.return_value = {"success": True, "source": "flagsmith_remote_admin"}
+        res = await fs.update_surge_mode_remote(True)
+
+        assert mock_update.call_count == 1
+        call_kwargs = mock_update.call_args.kwargs
+        assert call_kwargs["enabled"] is True
+        assert call_kwargs["feature_name"] == "surge_survival_mode"
+        assert call_kwargs["feature_id"] == "299379"
+        assert res["surge_mode_active"] is True

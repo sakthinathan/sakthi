@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
+from app.config import get_settings
 from app.models.operator import Operator, RevokedToken
 from app.schemas.auth import (
     OperatorLoginRequest,
@@ -20,6 +21,7 @@ from app.utils.security import (
     verify_access_token,
     extract_token_signature,
     mark_signature_revoked_in_cache,
+    discard_signature_from_cache,
     is_signature_revoked_in_cache,
     check_login_rate_limit,
     record_login_failure,
@@ -30,27 +32,44 @@ import structlog
 logger = structlog.get_logger()
 router = APIRouter()
 
-DEFAULT_ADMIN_EMAIL = "admin@utsavops.internal"
-DEFAULT_ADMIN_PASSWORD = "UtsavOps2026!Secure"
-DEFAULT_ADMIN_NAME = "UtsavOps Lead SRE"
 
+async def seed_initial_admin(
+    db: AsyncSession,
+    email: Optional[str] = None,
+    password: Optional[str] = None,
+    name: Optional[str] = None,
+) -> Optional[Operator]:
+    """
+    Explicit, environment-driven initial admin operator provisioning.
+    In production mode, requires explicit non-empty password configuration.
+    Never invoked automatically on arbitrary login attempts.
+    """
+    settings = get_settings()
+    admin_email = (email or settings.initial_admin_email or "admin@utsavops.internal").strip().lower()
+    admin_name = name or settings.initial_admin_name or "UtsavOps Lead SRE"
+    admin_password = password or settings.initial_admin_password
 
-async def ensure_default_operator(db: AsyncSession) -> Operator:
-    """Ensure the default seeded operator exists in the database."""
-    stmt = select(Operator).where(Operator.email == DEFAULT_ADMIN_EMAIL)
+    if not admin_password:
+        if settings.is_production:
+            logger.error("Initial admin provisioning aborted: INITIAL_ADMIN_PASSWORD required in production")
+            return None
+        # Safe development/demo default only when NOT in production
+        admin_password = "UtsavOps2026!Secure"
+
+    stmt = select(Operator).where(Operator.email == admin_email)
     operator = (await db.execute(stmt)).scalars().first()
     if not operator:
         operator = Operator(
-            email=DEFAULT_ADMIN_EMAIL,
-            hashed_password=hash_password(DEFAULT_ADMIN_PASSWORD),
-            name=DEFAULT_ADMIN_NAME,
+            email=admin_email,
+            hashed_password=hash_password(admin_password),
+            name=admin_name,
             role="admin",
             is_active=True,
         )
         db.add(operator)
         await db.commit()
         await db.refresh(operator)
-        logger.info("Default operator seeded successfully", email=DEFAULT_ADMIN_EMAIL)
+        logger.info("Initial admin operator provisioned successfully", email=admin_email, role="admin")
     return operator
 
 
@@ -138,9 +157,6 @@ async def login(payload: OperatorLoginRequest, db: AsyncSession = Depends(get_db
     # Rate limiting on failed login attempts
     check_login_rate_limit(clean_email)
 
-    # Ensure default operator exists on first login attempt
-    await ensure_default_operator(db)
-
     stmt = select(Operator).where(Operator.email == clean_email)
     operator = (await db.execute(stmt)).scalars().first()
 
@@ -204,7 +220,13 @@ async def logout(
             try:
                 await db.commit()
             except Exception as e:
-                logger.warn("Revoked token save warning", error=str(e))
+                await db.rollback()
+                discard_signature_from_cache(sig)
+                logger.error("Failed to persist token revocation", error=str(e))
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to revoke session token securely. Please retry.",
+                )
 
     return OperatorMessageResponse(message="Operator session logged out and token revoked successfully")
 

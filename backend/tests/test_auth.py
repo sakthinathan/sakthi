@@ -1,7 +1,9 @@
 import pytest
+from app.routers.auth import seed_initial_admin
 
 @pytest.mark.asyncio
-async def test_auth_login_success(client):
+async def test_auth_login_success(client, test_session):
+    await seed_initial_admin(test_session)
     payload = {
         "email": "admin@utsavops.internal",
         "password": "UtsavOps2026!Secure"
@@ -15,7 +17,8 @@ async def test_auth_login_success(client):
     assert data["operator"]["role"] == "admin"
 
 @pytest.mark.asyncio
-async def test_auth_login_invalid_credentials(client):
+async def test_auth_login_invalid_credentials(client, test_session):
+    await seed_initial_admin(test_session)
     payload = {
         "email": "admin@utsavops.internal",
         "password": "WrongPassword123!"
@@ -25,7 +28,8 @@ async def test_auth_login_invalid_credentials(client):
     assert "Invalid email or password" in res.json()["detail"]
 
 @pytest.mark.asyncio
-async def test_auth_me_with_valid_token(client):
+async def test_auth_me_with_valid_token(client, test_session):
+    await seed_initial_admin(test_session)
     # 1. Login to get token
     login_res = await client.post(
         "/api/auth/login",

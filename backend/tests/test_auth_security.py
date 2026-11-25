@@ -1,12 +1,46 @@
-"""Comprehensive Authentication and Security Tests for Phase 2C."""
+"""Comprehensive Authentication and Security Tests for Phase 2C & Demo Readiness."""
 import pytest
+from unittest.mock import patch
 from datetime import timedelta
+from sqlalchemy import select
 from app.models.operator import Operator
+from app.routers.auth import seed_initial_admin
+from app.config import Settings
 from app.utils.security import (
     create_access_token,
     clear_login_failures,
     hash_password,
 )
+
+
+@pytest.mark.asyncio
+async def test_auth_security_missing_or_weak_signing_secret():
+    """Missing or weak AUTH_SECRET_KEY (<32 chars) must be strictly rejected."""
+    # 1. Missing secret
+    s_missing = Settings(AUTH_SECRET_KEY=None, app_env="development")
+    s_missing.auth_secret_key = None
+    with pytest.raises(ValueError, match="AUTH_SECRET_KEY is not configured"):
+        _ = s_missing.token_signing_secret
+
+    # 2. Weak secret (< 32 characters)
+    s_weak = Settings(AUTH_SECRET_KEY="short-secret-12345", app_env="development")
+    with pytest.raises(ValueError, match="minimum 32 characters required"):
+        _ = s_weak.token_signing_secret
+
+
+@pytest.mark.asyncio
+async def test_auth_security_login_does_not_autoseed(client, test_session):
+    """Unregistered login attempts must return 401 and never auto-create an operator in DB."""
+    res = await client.post(
+        "/api/auth/login",
+        json={"email": "nonexistent@utsavops.internal", "password": "AnyPassword123!"},
+    )
+    assert res.status_code == 401
+    assert "Invalid email or password" in res.json()["detail"]
+
+    stmt = select(Operator).where(Operator.email == "nonexistent@utsavops.internal")
+    op = (await test_session.execute(stmt)).scalars().first()
+    assert op is None
 
 
 @pytest.mark.asyncio
@@ -36,8 +70,9 @@ async def test_auth_security_expired_token(client):
 
 
 @pytest.mark.asyncio
-async def test_auth_security_revoked_token_after_logout(client):
+async def test_auth_security_revoked_token_after_logout(client, test_session):
     """Logged out tokens must be blacklisted and rejected on subsequent requests."""
+    await seed_initial_admin(test_session)
     # 1. Login
     login_res = await client.post(
         "/api/auth/login",
@@ -59,6 +94,24 @@ async def test_auth_security_revoked_token_after_logout(client):
     me_res2 = await client.get("/api/auth/me", headers=headers)
     assert me_res2.status_code == 401
     assert "revoked" in me_res2.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_auth_security_logout_persistence_failure(client, test_session):
+    """If database commit fails during logout, must return 500 and not report success."""
+    await seed_initial_admin(test_session)
+    login_res = await client.post(
+        "/api/auth/login",
+        json={"email": "admin@utsavops.internal", "password": "UtsavOps2026!Secure"},
+    )
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Mock db.commit to raise an exception
+    with patch.object(test_session, "commit", side_effect=Exception("Database lock contention")):
+        logout_res = await client.post("/api/auth/logout", headers=headers)
+        assert logout_res.status_code == 500
+        assert "Failed to revoke session token securely" in logout_res.json()["detail"]
 
 
 @pytest.mark.asyncio

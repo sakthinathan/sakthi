@@ -1,3 +1,9 @@
+# =============================================================================
+# DEMO FIXTURE: Simulated utsavops-checkout workload for Kubernetes cluster demonstration.
+# NOTE: The embedded lightweight python HTTP server is an isolated demo fixture
+# designed for k3s pod readiness/liveness testing. It must NOT be presented as
+# proof that the live production commerce checkout container is running or healthy.
+# =============================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:

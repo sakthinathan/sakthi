@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     app_debug: bool = Field(True, description="Enable debug mode (automatically disabled in production)")
     app_secret_key: str = Field("dev-secret-key-change-in-production", description="Secret key for cryptographic operations")
     auth_secret_key: Optional[str] = Field(None, validation_alias="AUTH_SECRET_KEY", description="Dedicated secret key for authentication token signing")
+    initial_admin_email: str = Field("admin@utsavops.internal", validation_alias="INITIAL_ADMIN_EMAIL", description="Initial admin operator email")
+    initial_admin_password: Optional[str] = Field(None, validation_alias="INITIAL_ADMIN_PASSWORD", description="Initial admin operator password (required in production)")
+    initial_admin_name: str = Field("UtsavOps Lead SRE", validation_alias="INITIAL_ADMIN_NAME", description="Initial admin operator display name")
     app_host: str = Field("0.0.0.0", description="Bind host")
     app_port: int = Field(8000, description="Bind port")
     frontend_url: str = Field("http://localhost:5173", description="Frontend origin for CORS")
@@ -60,6 +63,7 @@ class Settings(BaseSettings):
     flagsmith_env_key: Optional[str] = Field(None, validation_alias="FLAGSMITH_ENV_KEY")
     flagsmith_environment_key_legacy: Optional[str] = Field(None, validation_alias="FLAGSMITH_ENVIRONMENT_KEY")
     flagsmith_express_delivery_feature_id: Optional[str] = Field("299380", validation_alias="FLAGSMITH_EXPRESS_DELIVERY_FEATURE_ID")
+    flagsmith_surge_mode_feature_id: Optional[str] = Field("299379", validation_alias="FLAGSMITH_SURGE_MODE_FEATURE_ID")
     flagsmith_admin_api_key: Optional[str] = Field(None, validation_alias="FLAGSMITH_ADMIN_API_KEY")
     nudgebee_circuit_breaker_key: Optional[str] = Field(None, validation_alias="NUDGEBEE_CIRCUIT_BREAKER_KEY")
     flagsmith_api_token_legacy: Optional[str] = Field(None, validation_alias="FLAGSMITH_API_TOKEN")
@@ -83,8 +87,17 @@ class Settings(BaseSettings):
 
     @property
     def token_signing_secret(self) -> str:
-        """Returns dedicated authentication signing key or app_secret_key"""
-        return self.auth_secret_key or self.app_secret_key
+        """
+        Returns dedicated authentication signing key.
+        Strictly requires AUTH_SECRET_KEY; does not fall back to APP_SECRET_KEY.
+        Fails securely if secret is missing or weak (< 32 characters).
+        """
+        if not self.auth_secret_key:
+            raise ValueError("AUTH_SECRET_KEY is not configured. A dedicated authentication secret is required.")
+        secret = self.auth_secret_key.strip()
+        if len(secret) < 32:
+            raise ValueError("AUTH_SECRET_KEY is too weak (minimum 32 characters required).")
+        return secret
 
     @property
     def google_maps_api_key(self) -> Optional[str]:
@@ -131,7 +144,7 @@ class Settings(BaseSettings):
 
     @property
     def is_test(self) -> bool:
-        return self.app_env.lower() == "test"
+        return self.app_env.lower() in ("test", "testing")
 
     @property
     def has_sarvam(self) -> bool:

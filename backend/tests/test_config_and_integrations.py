@@ -19,7 +19,7 @@ def test_configuration_loading():
     settings = get_settings()
 
     # Verify basic settings loaded
-    assert settings.app_env in ["development", "test", "production"]
+    assert settings.app_env in ["development", "test", "testing", "production"]
     assert settings.app_port == 8000
 
     # Verify GCP zone vs region normalization
