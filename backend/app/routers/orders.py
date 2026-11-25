@@ -304,8 +304,20 @@ async def review_order(
 
     if update_data.customer_name and order.customer:
         order.customer.name = update_data.customer_name
-    if update_data.customer_phone and order.customer:
-        order.customer.phone = update_data.customer_phone
+    if update_data.customer_phone is not None and order.customer:
+        raw_p = update_data.customer_phone.strip()
+        new_phone = raw_p if raw_p else None
+        if new_phone and new_phone != order.customer.phone:
+            # Check if another customer already has this phone number
+            existing_cust_stmt = select(Customer).where(Customer.phone == new_phone, Customer.id != order.customer.id)
+            existing_cust = (await db.execute(existing_cust_stmt)).scalars().first()
+            if existing_cust:
+                order.customer = existing_cust
+                order.customer_id = existing_cust.id
+                if update_data.customer_name:
+                    existing_cust.name = update_data.customer_name
+            else:
+                order.customer.phone = new_phone
     if update_data.special_instructions is not None:
         order.special_instructions = update_data.special_instructions
     if update_data.review_notes is not None:
@@ -343,15 +355,25 @@ async def review_order(
         actor="operator",
         details={"updated_fields": list(update_data.model_dump(exclude_unset=True).keys())}
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("Order review update transaction failed", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Failed to save order review: {str(e)}")
     return {"message": "Order review saved successfully", "order_id": order.id}
 
 @router.post("/{order_id}/approve")
 async def approve_order(order_id: str, db: AsyncSession = Depends(get_db)):
-    """Approve order and apply VIP / Express delivery rules"""
+    """Approve order and apply VIP / Express delivery rules with transition validation"""
     order = await get_order_with_relations(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status in ("rejected", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"Cannot approve order in '{order.status}' status")
+    if order.status == "approved":
+        return {"message": f"Order {order.order_number} is already approved", "status": order.status}
 
     order.status = "approved"
     await apply_vip_rules(db, order)
@@ -369,7 +391,12 @@ async def approve_order(order_id: str, db: AsyncSession = Depends(get_db)):
         actor="operator",
         details={"order_number": order.order_number, "is_vip": order.is_vip_order}
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("Order approval transaction failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to approve order: {str(e)}")
     return {"message": f"Order {order.order_number} approved", "status": order.status}
 
 @router.post("/{order_id}/reject")
@@ -378,10 +405,15 @@ async def reject_order(
     reason: str = Query("Unable to fulfill", description="Reason for rejection"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Reject order with reason"""
+    """Reject order with reason and transition validation"""
     order = await get_order_with_relations(db, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status in ("rejected", "cancelled"):
+        return {"message": f"Order {order.order_number} is already {order.status}", "status": order.status}
+    if order.status in ("approved", "dispatched", "delivered"):
+        raise HTTPException(status_code=400, detail=f"Cannot reject order in '{order.status}' status")
 
     order.status = "rejected"
     order.review_notes = reason
@@ -394,7 +426,12 @@ async def reject_order(
         actor="operator",
         details={"reason": reason}
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("Order rejection transaction failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to reject order: {str(e)}")
     return {"message": f"Order {order.order_number} rejected", "status": order.status}
 
 @router.get("/{order_id}/voice-confirmation")

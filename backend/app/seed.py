@@ -13,6 +13,7 @@ from app.models.order import Order, OrderItem, OrderInput
 from app.models.dispatch import DispatchDetail
 from app.models.audit import AuditLog
 from app.models.operator import Operator
+from app.routers.auth import seed_initial_admin
 from app.utils.security import hash_password
 from sqlalchemy import select
 import structlog
@@ -24,20 +25,8 @@ async def seed_demo_data():
     async with AsyncSessionLocal() as db:
         logger.info("Seeding UtsavOps festive demo data...")
 
-        # 0. Seed Default Operator
-        op_stmt = select(Operator).where(Operator.email == "admin@utsavops.internal")
-        admin_op = (await db.execute(op_stmt)).scalars().first()
-        if not admin_op:
-            admin_op = Operator(
-                email="admin@utsavops.internal",
-                hashed_password=hash_password("UtsavOps2026!Secure"),
-                name="UtsavOps Lead SRE",
-                role="admin",
-                is_active=True
-            )
-            db.add(admin_op)
-            await db.flush()
-            logger.info("Seeded operator admin@utsavops.internal")
+        # 0. Seed Default Operator using environment-driven configuration
+        await seed_initial_admin(db)
 
         # 1. Customers (idempotent lookup by phone)
         customers_data = [

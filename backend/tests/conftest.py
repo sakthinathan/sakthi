@@ -1,6 +1,12 @@
+import os
 import pytest
 import pytest_asyncio
 import asyncio
+
+os.environ.setdefault("APP_ENV", "testing")
+os.environ.setdefault("AUTH_SECRET_KEY", "test-auth-secret-key-minimum-32-characters-long!")
+os.environ.setdefault("INITIAL_ADMIN_PASSWORD", "UtsavOps2026!Secure")
+
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
@@ -38,9 +44,9 @@ async def client(test_session):
 
 @pytest_asyncio.fixture
 async def auth_client(client, test_session):
-    from app.routers.auth import ensure_default_operator
+    from app.routers.auth import seed_initial_admin
     from app.utils.security import create_access_token
-    operator = await ensure_default_operator(test_session)
+    operator = await seed_initial_admin(test_session)
     token = create_access_token({"sub": operator.id, "email": operator.email, "role": operator.role})
     client.headers["Authorization"] = f"Bearer {token}"
     return client

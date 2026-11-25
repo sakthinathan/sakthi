@@ -1,7 +1,7 @@
 """
 Database engine, session management, and resilience layer.
-Supports Cloud SQL PostgreSQL (production) with automatic graceful fallback to SQLite
-when external network or Cloud SQL access is unavailable.
+Supports Cloud SQL PostgreSQL (authoritative production database) and local SQLite (testing/development).
+In live/production mode, silent SQLite fallback is strictly prohibited to prevent data desynchronization.
 """
 import uuid
 import structlog
@@ -135,8 +135,8 @@ async def check_database_health(session: Optional[AsyncSession] = None) -> dict:
 async def init_db():
     """
     Initialize database schema.
-    Attempts Cloud SQL first. If unreachable (e.g. network restrictions or private IP),
-    switches gracefully to local SQLite so the system remains available.
+    In live mode (PostgreSQL), connects to Cloud SQL and fails fast if unavailable.
+    In SQLite mode (dev/test), initializes local database schema.
     """
     global engine, AsyncSessionLocal, _active_db_url, _is_sqlite_mode
     settings = get_settings()

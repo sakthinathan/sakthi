@@ -55,7 +55,8 @@ async def create_order_from_extraction(
             return existing
 
     customer_name = extracted_data.get("customer_name") or "Valued Festive Customer"
-    phone = extracted_data.get("phone")
+    raw_phone = extracted_data.get("phone")
+    phone = raw_phone.strip() if (raw_phone and str(raw_phone).strip()) else None
     delivery_address = extracted_data.get("delivery_address") or "Bengaluru, Karnataka"
 
     # Match or create customer

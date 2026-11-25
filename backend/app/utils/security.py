@@ -124,6 +124,11 @@ def mark_signature_revoked_in_cache(signature: str) -> None:
     _revoked_signatures_cache.add(signature)
 
 
+def discard_signature_from_cache(signature: str) -> None:
+    """Remove signature from in-memory revocation cache (e.g. if DB persistence failed)."""
+    _revoked_signatures_cache.discard(signature)
+
+
 def is_signature_revoked_in_cache(signature: str) -> bool:
     """Check if signature is in the revocation cache."""
     return signature in _revoked_signatures_cache
