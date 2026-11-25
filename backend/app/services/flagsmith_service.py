@@ -146,7 +146,10 @@ class FlagsmithService:
         surge_active = self.get_surge_mode()
 
         # Retrieve evaluated feature flag for identity
-        if self.client:
+        if "express_delivery_enabled" in self.local_overrides:
+            raw_express = self.local_overrides["express_delivery_enabled"]
+            source = "local_override"
+        elif self.client:
             try:
                 identity_flags = self.client.get_identity_flags(identifier=identifier, traits=traits)
                 raw_express = identity_flags.is_feature_enabled("express_delivery_enabled")
@@ -240,18 +243,48 @@ class FlagsmithService:
                 "message": f"FLAGSMITH_ADMIN_API_KEY absent; applied local in-memory override for {feature_name}"
             }
 
+        auth_val = f"Api-Key {admin_key}" if ("." in admin_key or admin_key.startswith("Api-Key")) else f"Token {admin_key}"
         headers = {
-            "Authorization": f"Token {admin_key}",
+            "Authorization": auth_val,
             "Content-Type": "application/json"
         }
 
         # Official Flagsmith Management API endpoint for environment feature states
         base_api = "https://api.flagsmith.com/api/v1"
-        search_url = f"{base_api}/environments/{env_key}/feature-states/?feature={target_feature_id}"
+        search_url = f"{base_api}/environments/{env_key}/featurestates/?feature={target_feature_id}"
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 get_resp = await client.get(search_url, headers=headers)
+
+                # Fallback to hyphenated endpoint if 404
+                if get_resp.status_code == 404:
+                    alt_url = f"{base_api}/environments/{env_key}/feature-states/?feature={target_feature_id}"
+                    alt_resp = await client.get(alt_url, headers=headers)
+                    if alt_resp.status_code == 200:
+                        get_resp = alt_resp
+
+                # If still 404 and env_key is a server key (ser.xxx) or alias, discover client env key from projects
+                if get_resp.status_code == 404:
+                    try:
+                        proj_resp = await client.get(f"{base_api}/projects/", headers=headers)
+                        if proj_resp.status_code == 200:
+                            for p in proj_resp.json():
+                                pe_resp = await client.get(f"{base_api}/projects/{p['id']}/environments/", headers=headers)
+                                if pe_resp.status_code == 200:
+                                    envs = pe_resp.json()
+                                    if envs:
+                                        m = next((e for e in envs if e.get("api_key") == env_key or e.get("name") == "Development"), envs[0])
+                                        resolved_key = m.get("api_key")
+                                        if resolved_key and resolved_key != env_key:
+                                            res_url = f"{base_api}/environments/{resolved_key}/featurestates/?feature={target_feature_id}"
+                                            res_resp = await client.get(res_url, headers=headers)
+                                            if res_resp.status_code == 200:
+                                                get_resp = res_resp
+                                                env_key = resolved_key
+                                                break
+                    except Exception as discover_err:
+                        logger.warn("Flagsmith environment discovery error", error=str(discover_err))
 
                 if get_resp.status_code in (401, 403):
                     logger.error("Flagsmith Management API unauthorized", status_code=get_resp.status_code)
@@ -306,10 +339,59 @@ class FlagsmithService:
                     }
 
                 feature_state_id = results[0]["id"]
-                patch_url = f"{base_api}/environments/{env_key}/feature-states/{feature_state_id}/"
+                patch_url = f"{base_api}/environments/{env_key}/featurestates/{feature_state_id}/"
 
                 # Apply PATCH
                 patch_resp = await client.patch(patch_url, headers=headers, json={"enabled": enabled})
+
+                # If environment uses v2 feature versioning, gracefully execute versioning workflow
+                if patch_resp.status_code == 400 and "v2 feature versioning" in patch_resp.text:
+                    env_meta_resp = await client.get(f"{base_api}/environments/{env_key}/", headers=headers)
+                    env_data = env_meta_resp.json() if env_meta_resp.status_code == 200 else {}
+                    env_id = env_data.get("id")
+                    if not env_id:
+                        proj_resp = await client.get(f"{base_api}/projects/", headers=headers)
+                        if proj_resp.status_code == 200:
+                            for p in proj_resp.json():
+                                pe_resp = await client.get(f"{base_api}/projects/{p['id']}/environments/", headers=headers)
+                                if pe_resp.status_code == 200:
+                                    envs = pe_resp.json()
+                                    if envs:
+                                        m = next((e for e in envs if e.get("api_key") == env_key or e.get("name") == "Development"), envs[0])
+                                        env_id = m.get("id")
+                                        break
+
+                    if env_id:
+                        draft_url = f"{base_api}/environments/{env_id}/features/{target_feature_id}/versions/"
+                        draft_resp = await client.post(draft_url, headers=headers, json={})
+                        if draft_resp.status_code in (200, 201):
+                            draft_uuid = draft_resp.json().get("uuid")
+                            draft_fs_url = f"{base_api}/environments/{env_id}/features/{target_feature_id}/versions/{draft_uuid}/featurestates/"
+                            draft_fs_resp = await client.get(draft_fs_url, headers=headers)
+                            if draft_fs_resp.status_code == 200:
+                                fs_list = draft_fs_resp.json()
+                                fs_items = fs_list if isinstance(fs_list, list) else fs_list.get("results", [])
+                                if fs_items:
+                                    draft_fs_id = fs_items[0]["id"]
+                                    patch_draft_url = f"{base_api}/environments/{env_id}/features/{target_feature_id}/versions/{draft_uuid}/featurestates/{draft_fs_id}/"
+                                    patch_draft_resp = await client.patch(patch_draft_url, headers=headers, json={"enabled": enabled})
+                                    if patch_draft_resp.status_code in (200, 201):
+                                        pub_url = f"{base_api}/environments/{env_id}/features/{target_feature_id}/versions/{draft_uuid}/publish/"
+                                        pub_resp = await client.post(pub_url, headers=headers, json={})
+                                        if pub_resp.status_code in (200, 201):
+                                            self.local_overrides[feature_name] = enabled
+                                            logger.info("Flagsmith v2 versioning update published and confirmed", feature=feature_name, enabled=enabled, version_uuid=draft_uuid)
+                                            return {
+                                                "success": True,
+                                                "enabled": enabled,
+                                                "source": "flagsmith_remote_admin",
+                                                "status": "LIVE",
+                                                "feature_name": feature_name,
+                                                "feature_id": target_feature_id,
+                                                "version_uuid": draft_uuid,
+                                                "message": f"Successfully updated feature '{feature_name}' ({target_feature_id}) to {enabled} via Flagsmith Management API (v2 versioning)"
+                                            }
+
                 if patch_resp.status_code not in (200, 201):
                     return {
                         "success": False,
