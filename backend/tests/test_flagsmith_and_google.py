@@ -275,3 +275,48 @@ async def test_flagsmith_surge_mode_remote_targets_correct_surge_feature():
         assert call_kwargs["feature_name"] == "surge_survival_mode"
         assert call_kwargs["feature_id"] == "299379"
         assert res["surge_mode_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_flagsmith_management_api_v2_versioning_flow():
+    """Verify Flagsmith Management API seamlessly handles environments with v2 feature versioning."""
+    fs = FlagsmithService()
+
+    # Initial legacy featurestate get
+    mock_get_fs = MagicMock(status_code=200)
+    mock_get_fs.json.return_value = {"results": [{"id": 1856917, "enabled": False}]}
+
+    # Legacy patch fails with 400 because environment uses v2 feature versioning
+    mock_patch_fail = MagicMock(status_code=400, text='{"detail":"This environment uses v2 feature versioning. Use the environment feature version endpoint instead."}')
+
+    # Environment meta returns env_id 118673
+    mock_env_meta = MagicMock(status_code=200)
+    mock_env_meta.json.return_value = {"id": 118673, "name": "Development"}
+
+    # Draft version create returns uuid
+    mock_post_draft = MagicMock(status_code=201)
+    mock_post_draft.json.return_value = {"uuid": "test-draft-uuid-123"}
+
+    # Draft featurestates get
+    mock_get_draft_fs = MagicMock(status_code=200)
+    mock_get_draft_fs.json.return_value = [{"id": 9999, "enabled": False}]
+
+    # Draft featurestate patch
+    mock_patch_draft = MagicMock(status_code=200)
+
+    # Version publish post
+    mock_post_publish = MagicMock(status_code=200)
+
+    with patch.object(Settings, "flagsmith_admin_key", PropertyMock(return_value="8coM1k1z.test_api_key")), \
+         patch.object(Settings, "flagsmith_environment_key", PropertyMock(return_value="SEgA7VXmvu5AbDLRjpZsrM")), \
+         patch("httpx.AsyncClient.get", side_effect=[mock_get_fs, mock_env_meta, mock_get_draft_fs]), \
+         patch("httpx.AsyncClient.patch", side_effect=[mock_patch_fail, mock_patch_draft]), \
+         patch("httpx.AsyncClient.post", side_effect=[mock_post_draft, mock_post_publish]):
+
+        result = await fs.update_feature_state_remote(enabled=True, feature_name="surge_survival_mode", feature_id="299379")
+
+        assert result["success"] is True
+        assert result["status"] == "LIVE"
+        assert result["version_uuid"] == "test-draft-uuid-123"
+        assert "v2 versioning" in result["message"]
+

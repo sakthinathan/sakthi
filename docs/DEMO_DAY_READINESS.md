@@ -132,7 +132,7 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 | **Sarvam AI** | Bulbul v3 TTS | **LIVE** | Synthesized live audio stream (67,782 bytes audio payload) |
 | **Flagsmith** | Client SDK | **LIVE** | Connected to Edge API; flags loaded dynamically |
 | **Flagsmith** | VIP Segmentation | **LIVE** | Identity traits (`tier = VIP`) evaluated against `vip_festive_buyers` |
-| **Flagsmith** | Management API | **UNAVAILABLE** | Key lacks write permissions (HTTP 404); gracefully handles local override |
+| **Flagsmith** | Management API | **LIVE** | Remote PATCH via v2 versioning workflow & read-after-write confirmed |
 | **Google Cloud** | Address Validation | **LIVE** | Validated address with components and street-level granularity |
 | **Google Cloud** | Geocoding API | **LIVE** | Resolved pinpoint coordinates (12.9783692, 77.6408356) |
 | **Google Cloud** | Air Quality API | **LIVE** | Connected to Air Quality lookup; disclaimer strictly preserved |
@@ -178,12 +178,12 @@ tests/test_sarvam_doc_ai.py::test_sarvam_doc_ai_timeout_handling PASSED  [100%]
 
 ---
 
-## 5. Known Limitations & Backup Plan
+## 5. Operational Notes & Infrastructure
 
-1. **Remote Flagsmith Management API Permissions**:
-   - The Flagsmith client key connects to Edge API and evaluates flags live.
-   - The Management API token returns HTTP 404 when attempting remote feature state PATCHes.
-   - *Backup Plan*: The platform automatically handles this via `LOCAL_OVERRIDE` mode while continuing to evaluate live flags via the Flagsmith SDK.
+1. **Remote Flagsmith Management API Integration**:
+   - The Flagsmith client key connects to the Edge API and evaluates flags live.
+   - The Management API master token (`8coM1k1z.ySIiAaSzaC6ABI4bjnrOutg4gucDybWQ`) is fully authenticated and uses Flagsmith's Feature Versioning v2 workflow (`POST draft version` -> `PATCH featurestate` -> `POST publish` -> `GET Edge API confirm`).
+   - Remote changes to `surge_survival_mode` (ID: 299379) reflect live in both dashboard queries and Edge evaluation.
 2. **Kubernetes Cluster SSH Tunnel**:
    - Live querying of the k3s cluster on GCP VM `utsavops-nudgebee` requires an active SSH tunnel.
    - *Backup Plan*: When untunneled, the UI honestly displays `SIMULATED TELEMETRY` and demonstrates the complete, repeatable AIOps RCA and mitigation workflow.
